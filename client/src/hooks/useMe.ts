@@ -20,17 +20,30 @@ export function useMe() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const fetchMe = useCallback(
+    async () => apiFetch<PublicMe>('/api/me', { token: await getToken() }),
+    [getToken],
+  );
+
+  const applyResult = useCallback((result: Promise<PublicMe>, isCurrent: () => boolean = () => true) => {
+    return result
+      .then((data) => {
+        if (!isCurrent()) return;
+        setMe(data);
+        setError(null);
+      })
+      .catch((e) => {
+        if (isCurrent()) setError(e instanceof ApiError ? e.message : 'Something went wrong. Please try again.');
+      })
+      .finally(() => {
+        if (isCurrent()) setLoading(false);
+      });
+  }, []);
+
   const refresh = useCallback(async () => {
     setLoading(true);
-    try {
-      setMe(await apiFetch<PublicMe>('/api/me', { token: await getToken() }));
-      setError(null);
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Something went wrong. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  }, [getToken]);
+    await applyResult(fetchMe());
+  }, [applyResult, fetchMe]);
 
   const update = useCallback(
     async (patch: ProfilePatch) => {
@@ -40,8 +53,13 @@ export function useMe() {
   );
 
   useEffect(() => {
-    if (isSignedIn) refresh();
-  }, [isSignedIn, refresh]);
+    if (!isSignedIn) return;
+    let current = true;
+    applyResult(fetchMe(), () => current);
+    return () => {
+      current = false;
+    };
+  }, [isSignedIn, applyResult, fetchMe]);
 
   return { me, loading, error, refresh, update };
 }

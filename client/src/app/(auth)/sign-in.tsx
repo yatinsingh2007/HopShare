@@ -109,9 +109,9 @@ export default function SignIn() {
 
   return (
     <Screen>
-      <Text style={[styles.heading, { color: colors.ink }]}>What's your number?</Text>
+      <Text style={[styles.heading, { color: colors.ink }]}>{"What's your number?"}</Text>
       <Text style={[styles.helper, { color: colors.muted }]}>
-        We'll text a 6-digit code. Your number is never shown to other riders.
+        {"We'll text a 6-digit code. Your number is never shown to other riders."}
       </Text>
       <TextField
         label="Phone number"

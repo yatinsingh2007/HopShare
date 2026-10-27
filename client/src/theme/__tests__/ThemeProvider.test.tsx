@@ -1,7 +1,7 @@
-import { Text } from 'react-native';
+import { Pressable, Text } from 'react-native';
 import * as ReactNative from 'react-native';
 import * as SecureStore from 'expo-secure-store';
-import { act, render, screen } from '@testing-library/react-native';
+import { fireEvent, render, screen } from '@testing-library/react-native';
 import { ThemeProvider, useTheme } from '../ThemeProvider';
 import { palettes } from '../tokens';
 
@@ -12,10 +12,17 @@ jest.mock('expo-secure-store', () => ({
 
 const colorScheme = jest.spyOn(ReactNative, 'useColorScheme');
 
-let api: ReturnType<typeof useTheme>;
 function Probe() {
-  api = useTheme();
-  return <Text testID="bg">{api.colors.bg}</Text>;
+  const { colors, scheme, setPreference } = useTheme();
+  return (
+    <>
+      <Text testID="bg">{colors.bg}</Text>
+      <Text testID="scheme">{scheme}</Text>
+      <Pressable accessibilityRole="button" onPress={() => setPreference('dark')}>
+        <Text>go dark</Text>
+      </Pressable>
+    </>
+  );
 }
 
 const renderTheme = () =>
@@ -46,8 +53,8 @@ test('system switching dark → light re-themes live without remounting', async 
 test('setPreference("dark") overrides a light system and is persisted', async () => {
   colorScheme.mockReturnValue('light');
   await renderTheme();
-  await act(async () => api.setPreference('dark'));
-  expect(api.scheme).toBe('dark');
+  await fireEvent.press(screen.getByRole('button', { name: 'go dark' }));
+  expect(screen.getByTestId('scheme')).toHaveTextContent('dark');
   expect(screen.getByTestId('bg')).toHaveTextContent('#0f1412');
   expect(SecureStore.setItemAsync).toHaveBeenCalledWith('unihop.themePreference', 'dark');
 });
