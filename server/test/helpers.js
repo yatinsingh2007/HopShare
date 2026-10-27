@@ -20,3 +20,5 @@ export const resetTestDb = (pool) => pool.query('TRUNCATE users RESTART IDENTITY
 export const closeTestDb = async () => {
   if (poolPromise) await (await poolPromise).end();
 };
+
+export const fakeGetAuth = (req) => ({ userId: req.headers['x-test-user'] ?? null });
