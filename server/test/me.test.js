@@ -50,3 +50,35 @@ test('response never includes clerk_user_id', async () => {
   const res = await request(app).get('/api/me').set('x-test-user', 'user_4');
   assert.ok(!JSON.stringify(res.body).includes('user_4'));
 });
+
+test('PATCH /api/me trims and saves name and UPI ID', async () => {
+  const res = await request(app)
+    .patch('/api/me')
+    .set('x-test-user', 'user_5')
+    .send({ firstName: '  Riya ', upiId: ' riya@okaxis ' });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.data.firstName, 'Riya');
+  assert.equal(res.body.data.upiId, 'riya@okaxis');
+  assert.equal(res.body.data.profileComplete, true);
+});
+
+test('PATCH /api/me with an invalid UPI ID → 400', async () => {
+  const res = await request(app).patch('/api/me').set('x-test-user', 'user_6').send({ upiId: 'riya' });
+  assert.equal(res.status, 400);
+  assert.deepEqual(res.body, { success: false, message: 'Enter a valid UPI ID, like name@bank' });
+});
+
+test('PATCH /api/me with a blank first name → 400', async () => {
+  const res = await request(app).patch('/api/me').set('x-test-user', 'user_7').send({ firstName: '   ' });
+  assert.equal(res.status, 400);
+  assert.deepEqual(res.body, { success: false, message: "First name can't be empty" });
+});
+
+test('PATCH /api/me ignores attempts to set verification', async () => {
+  const res = await request(app)
+    .patch('/api/me')
+    .set('x-test-user', 'user_8')
+    .send({ idVerifiedAt: '2020-01-01', id_verified_at: '2020-01-01' });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.data.idVerified, false);
+});

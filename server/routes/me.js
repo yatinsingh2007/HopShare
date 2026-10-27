@@ -1,9 +1,10 @@
 import { Router } from 'express';
-import { getMe } from '../controllers/meController.js';
+import { getMe, updateMe } from '../controllers/meController.js';
 
-const meRoutes = () => {
+const meRoutes = ({ db }) => {
   const router = Router();
   router.get('/', getMe);
+  router.patch('/', updateMe(db));
   return router;
 };
 

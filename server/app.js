@@ -10,7 +10,7 @@ const createApp = ({ getAuth, db, authMiddleware } = {}) => {
   if (authMiddleware) app.use(authMiddleware);
 
   app.use('/api/health', healthRoutes);
-  app.use('/api/me', requireUser({ getAuth, db }), meRoutes());
+  app.use('/api/me', requireUser({ getAuth, db }), meRoutes({ db }));
 
   app.use(notFound);
   app.use(errorHandler);
