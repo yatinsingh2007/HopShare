@@ -51,6 +51,8 @@ export default function SignIn() {
       }
       setFlow('signUp');
       setStep('code');
+    } catch {
+      setError(GENERIC_ERROR);
     } finally {
       setBusy(false);
     }
@@ -71,7 +73,10 @@ export default function SignIn() {
         );
         return;
       }
-      await resource.finalize();
+      const { error: finalizeError } = await resource.finalize();
+      if (finalizeError) setError(GENERIC_ERROR);
+    } catch {
+      setError(GENERIC_ERROR);
     } finally {
       setBusy(false);
     }

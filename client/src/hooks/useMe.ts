@@ -19,6 +19,7 @@ export function useMe() {
   const [me, setMe] = useState<PublicMe | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [errorStatus, setErrorStatus] = useState<number | null>(null);
 
   const fetchMe = useCallback(
     async () => apiFetch<PublicMe>('/api/me', { token: await getToken() }),
@@ -31,9 +32,12 @@ export function useMe() {
         if (!isCurrent()) return;
         setMe(data);
         setError(null);
+        setErrorStatus(null);
       })
       .catch((e) => {
-        if (isCurrent()) setError(e instanceof ApiError ? e.message : 'Something went wrong. Please try again.');
+        if (!isCurrent()) return;
+        setError(e instanceof ApiError ? e.message : 'Something went wrong. Please try again.');
+        setErrorStatus(e instanceof ApiError ? e.status : null);
       })
       .finally(() => {
         if (isCurrent()) setLoading(false);
@@ -61,5 +65,5 @@ export function useMe() {
     };
   }, [isSignedIn, applyResult, fetchMe]);
 
-  return { me, loading, error, refresh, update };
+  return { me, loading, error, errorStatus, refresh, update };
 }

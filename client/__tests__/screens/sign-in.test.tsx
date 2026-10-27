@@ -60,3 +60,21 @@ test('a wrong code shows a friendly error', async () => {
   expect(screen.getByText("That code didn't match. Try again.")).toBeOnTheScreen();
   expect(mockSignIn.finalize).not.toHaveBeenCalled();
 });
+
+test('a thrown network error while sending the code shows a friendly error', async () => {
+  mockSignIn.phoneCode.sendCode.mockRejectedValue(new TypeError('Network request failed'));
+  await enterNumber('9876543210');
+  await act(async () => fireEvent.press(screen.getByRole('button', { name: 'Send code' })));
+  expect(screen.getByText('Something went wrong. Please try again.')).toBeOnTheScreen();
+});
+
+test('a failed finalize after a correct code shows a friendly error', async () => {
+  mockSignIn.phoneCode.sendCode.mockResolvedValue({ error: null });
+  mockSignIn.phoneCode.verifyCode.mockResolvedValue({ error: null });
+  mockSignIn.finalize.mockResolvedValueOnce({ error: { code: 'session_exists' } } as never);
+  await enterNumber('9876543210');
+  await act(async () => fireEvent.press(screen.getByRole('button', { name: 'Send code' })));
+  await fireEvent.changeText(screen.getByLabelText('6-digit code'), '424242');
+  await act(async () => fireEvent.press(screen.getByRole('button', { name: 'Verify' })));
+  expect(screen.getByText('Something went wrong. Please try again.')).toBeOnTheScreen();
+});
