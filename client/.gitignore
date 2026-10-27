@@ -42,4 +42,5 @@ example
 /ios
 /android
 .claude
-.vscode.env
+.vscode
+.env
