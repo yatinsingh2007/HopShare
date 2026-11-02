@@ -14,8 +14,9 @@
   "description": "",
   "dependencies": {
     "@clerk/express": "^2.1.84",
+    "@prisma/client": "^6.19.3",
     "express": "^5.3.0",
-    "pg": "^8.23.1"
+    "prisma": "^6.19.3"
   },
   "devDependencies": {
     "supertest": "^7.3.1"
