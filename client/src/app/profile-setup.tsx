@@ -4,13 +4,13 @@ import { router } from 'expo-router';
 import { Screen } from '@/components/Screen';
 import { Button } from '@/components/Button';
 import { TextField } from '@/components/TextField';
-import { useMeContext } from '@/context/MeContext';
+import { useMe } from '@/hooks/useMe';
 import { ApiError } from '@/services/api';
-import { useTheme } from '@/theme/ThemeProvider';
+import { useTheme } from '@/context/ThemeContext';
 
 export default function ProfileSetup() {
   const { colors } = useTheme();
-  const { me, update } = useMeContext();
+  const { me, update } = useMe();
   const [firstName, setFirstName] = useState(me?.firstName ?? '');
   const [upiId, setUpiId] = useState(me?.upiId ?? '');
   const [upiError, setUpiError] = useState<string | null>(null);
@@ -23,7 +23,7 @@ export default function ProfileSetup() {
     setFormError(null);
     try {
       await update({ firstName, upiId });
-      router.replace('/');
+      router.replace('/home');
     } catch (e) {
       const message = e instanceof ApiError ? e.message : 'Something went wrong. Please try again.';
       if (message.includes('UPI')) setUpiError(message);

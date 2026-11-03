@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '@clerk/expo';
 import { apiFetch, ApiError } from '@/services/api';
 
@@ -14,56 +14,30 @@ export type PublicMe = {
 
 export type ProfilePatch = { firstName?: string; upiId?: string };
 
+/** Loads the signed-in rider's profile from our API. */
 export function useMe() {
   const { getToken, isSignedIn } = useAuth();
   const [me, setMe] = useState<PublicMe | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [errorStatus, setErrorStatus] = useState<number | null>(null);
-
-  const fetchMe = useCallback(
-    async () => apiFetch<PublicMe>('/api/me', { token: await getToken() }),
-    [getToken],
-  );
-
-  const applyResult = useCallback((result: Promise<PublicMe>, isCurrent: () => boolean = () => true) => {
-    return result
-      .then((data) => {
-        if (!isCurrent()) return;
-        setMe(data);
-        setError(null);
-        setErrorStatus(null);
-      })
-      .catch((e) => {
-        if (!isCurrent()) return;
-        setError(e instanceof ApiError ? e.message : 'Something went wrong. Please try again.');
-        setErrorStatus(e instanceof ApiError ? e.status : null);
-      })
-      .finally(() => {
-        if (isCurrent()) setLoading(false);
-      });
-  }, []);
-
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    await applyResult(fetchMe());
-  }, [applyResult, fetchMe]);
-
-  const update = useCallback(
-    async (patch: ProfilePatch) => {
-      setMe(await apiFetch<PublicMe>('/api/me', { token: await getToken(), method: 'PATCH', body: patch }));
-    },
-    [getToken],
-  );
 
   useEffect(() => {
     if (!isSignedIn) return;
-    let current = true;
-    applyResult(fetchMe(), () => current);
-    return () => {
-      current = false;
+    const load = async () => {
+      try {
+        setMe(await apiFetch<PublicMe>('/api/me', { token: await getToken() }));
+      } catch (e) {
+        setError(e instanceof ApiError ? e.message : 'Something went wrong. Please try again.');
+      } finally {
+        setLoading(false);
+      }
     };
-  }, [isSignedIn, applyResult, fetchMe]);
+    load();
+  }, [isSignedIn, getToken]);
 
-  return { me, loading, error, errorStatus, refresh, update };
+  const update = async (patch: ProfilePatch) => {
+    setMe(await apiFetch<PublicMe>('/api/me', { token: await getToken(), method: 'PATCH', body: patch }));
+  };
+
+  return { me, loading, error, update };
 }
