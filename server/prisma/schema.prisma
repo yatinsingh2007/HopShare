@@ -27,7 +27,7 @@ enum PaymentStatus {
 }
 
 model User {
-  id          String     @id @default(uuid()) @db.Uuid
+  id          String     @id @default(uuid())
   name        String
   email       String?    @unique
   status      UserStatus @default(ACTIVE)
@@ -44,14 +44,14 @@ model User {
 }
 
 model Ride {
-  id            String                                @id @default(uuid()) @db.Uuid
-  paymentStatus PaymentStatus                         @default(PENDING) @map("payment_status")
+  id            String                                @id @default(uuid())
+  paymentStatus PaymentStatus                         @default(PENDING)
   joinable      Boolean                               @default(true)
   // [lon, lat] via ST_MakePoint(lon, lat); written with raw SQL
   source        Unsupported("geography(Point, 4326)")
-  time          DateTime                              @db.Timestamptz
+  time          DateTime
   destination   Unsupported("geography(Point, 4326)")
-  rideCreatorId String                                @map("ride_creator_id") @db.Uuid
+  rideCreatorId String
 
   rideCreator User      @relation("RideCreator", fields: [rideCreatorId], references: [id])
   users       User[]    @relation("RideUsers")
@@ -60,9 +60,8 @@ model Ride {
 }
 
 model Chat {
-  id     String @id @default(uuid()) @db.Uuid
-  rideId String @unique @map("ride_id") @db.Uuid
-
+  id       String    @id @default(uuid())
+  rideId   String    @unique @map("ride_id")
   ride     Ride      @relation(fields: [rideId], references: [id], onDelete: Cascade)
   users    User[]
   messages Message[]
@@ -70,25 +69,25 @@ model Chat {
 }
 
 model Message {
-  id        String   @id @default(uuid()) @db.Uuid
-  senderId  String   @map("sender_id") @db.Uuid
-  chatId    String   @map("chat_id") @db.Uuid
+  id        String   @id @default(uuid())
+  senderId  String
+  chatId    String
   content   String
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   sender User @relation(fields: [senderId], references: [id])
   chat   Chat @relation(fields: [chatId], references: [id], onDelete: Cascade)
 }
 
 model Payment {
-  id     String        @id @default(uuid()) @db.Uuid
-  fromId String        @map("from_id") @db.Uuid
-  toId   String        @map("to_id") @db.Uuid
-  rideId String        @map("ride_id") @db.Uuid
-  chatId String        @map("chat_id") @db.Uuid
+  id     String        @id @default(uuid())
+  fromId String
+  toId   String
+  rideId String
+  chatId String
   status PaymentStatus @default(PENDING)
-  amount Decimal       @db.Decimal(10, 2)
+  amount Decimal
 
   from User @relation("PaymentFrom", fields: [fromId], references: [id])
   to   User @relation("PaymentTo", fields: [toId], references: [id])
