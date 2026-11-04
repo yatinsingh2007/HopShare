@@ -28,12 +28,13 @@ enum PaymentStatus {
 
 model User {
   id          String     @id @default(uuid())
-  name        String
+  // Clerk handles sign-in; this links the rider to their Clerk account.
+  clerkId     String     @unique
+  name        String?
   email       String?    @unique
   status      UserStatus @default(ACTIVE)
-  password    String
-  phoneNumber String?    @unique @map("phone_number")
-  upiId       String?    @map("upi_id")
+  phoneNumber String?    @unique
+  upiId       String?
 
   rides            Ride[]    @relation("RideUsers")
   createdRides     Ride[]    @relation("RideCreator")
@@ -61,7 +62,7 @@ model Ride {
 
 model Chat {
   id       String    @id @default(uuid())
-  rideId   String    @unique @map("ride_id")
+  rideId   String    @unique
   ride     Ride      @relation(fields: [rideId], references: [id], onDelete: Cascade)
   users    User[]
   messages Message[]
