@@ -1,13 +1,10 @@
 import { StyleSheet, Text, View } from 'react-native';
-import { useAuth } from '@clerk/expo';
 import { Screen } from '@/components/Screen';
-import { Button } from '@/components/Button';
-import { useMeContext } from '@/context/MeContext';
-import { useTheme } from '@/theme/ThemeProvider';
+import { useMe } from '@/hooks/useMe';
+import { useTheme } from '@/context/ThemeContext';
 
 export default function Home() {
-  const { me } = useMeContext();
-  const { signOut } = useAuth();
+  const { me } = useMe();
   const { colors } = useTheme();
 
   return (
@@ -17,8 +14,6 @@ export default function Home() {
         <Text style={[styles.cardTitle, { color: colors.ink }]}>Where to?</Text>
         <Text style={{ color: colors.muted, fontSize: 14 }}>Finding riders going your way is coming soon.</Text>
       </View>
-      <View style={{ flex: 1 }} />
-      <Button label="Sign out" variant="ghost" onPress={() => signOut()} />
     </Screen>
   );
 }

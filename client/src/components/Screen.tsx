@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { StyleSheet, type ViewStyle } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useTheme } from '@/theme/ThemeProvider';
+import { useTheme } from '@/context/ThemeContext';
 
 export function Screen({ children, style }: { children: ReactNode; style?: ViewStyle }) {
   const { colors } = useTheme();
