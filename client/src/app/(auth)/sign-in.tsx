@@ -1,21 +1,22 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSignIn, useSignUp, useSSO } from '@clerk/expo';
 import { Screen } from '@/components/Screen';
 import { Button } from '@/components/Button';
 import { TextField } from '@/components/TextField';
+import { CodeField } from '@/components/CodeField';
 import { Icon } from '@/components/Icon';
 import { useTheme } from '@/context/ThemeContext';
 import { type } from '@/theme/type';
 
-const GENERIC_ERROR = 'Something went wrong. Please try again.';
+type ClerkResultError = { code?: string; errors?: { code?: string }[] } | null;
 
-/** The specific reason Clerk gives, e.g. 'form_identifier_not_found'. */
-const clerkCode = (error: unknown) => {
-  const e = error as { code?: string; errors?: { code?: string }[] } | null;
-  return e?.errors?.[0]?.code ?? e?.code;
-};
+const hasCode = (error: ClerkResultError, code: string) =>
+  !!error && (error.code === code || !!error.errors?.some((e) => e.code === code));
+
+const GENERIC_ERROR = 'Something went wrong. Please try again.';
+const RESEND_SECONDS = 30;
 
 const COPY = {
   signup: {
@@ -39,7 +40,13 @@ const isEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(value);
 function BackButton({ onPress }: { onPress: () => void }) {
   const { colors } = useTheme();
   return (
-    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel="Back" style={styles.back}>
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel="Back"
+      android_ripple={{ color: colors.line, borderless: true, radius: 24 }}
+      style={styles.back}
+    >
       <Icon name="arrow_back" size={24} color={colors.ink} />
     </Pressable>
   );
@@ -62,11 +69,17 @@ export default function SignIn() {
   const [busy, setBusy] = useState(false);
   const [googleBusy, setGoogleBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [resendIn, setResendIn] = useState(0);
 
   const emailAddress = email.trim().toLowerCase();
 
-  // Try to sign in first. If Clerk has no account for this email, create one instead,
-  // so "Get started" and "I have an account" both work for everyone.
+  useEffect(() => {
+    if (resendIn <= 0) return;
+    const t = setTimeout(() => setResendIn((s) => s - 1), 1000);
+    return () => clearTimeout(t);
+  }, [resendIn]);
+
+  // Clerk tells us whether the email already has an account, so either mode works for either user.
   const sendCode = async () => {
     setBusy(true);
     setError(null);
@@ -74,7 +87,7 @@ export default function SignIn() {
       const { error: signInError } = await signIn.emailCode.sendCode({ emailAddress });
       if (!signInError) {
         setFlow('signIn');
-      } else if (clerkCode(signInError) !== 'form_identifier_not_found') {
+      } else if (!hasCode(signInError, 'form_identifier_not_found')) {
         setError(GENERIC_ERROR);
         return;
       } else {
@@ -88,6 +101,7 @@ export default function SignIn() {
       }
       setCode('');
       setStep('code');
+      setResendIn(RESEND_SECONDS);
     } catch {
       setError(GENERIC_ERROR);
     } finally {
@@ -99,15 +113,19 @@ export default function SignIn() {
     setBusy(true);
     setError(null);
     try {
-      if (flow === 'signIn') {
-        const { error: verifyError } = await signIn.emailCode.verifyCode({ code });
-        if (verifyError) return setError("That code didn't match. Check your email and try again.");
-        await signIn.finalize();
-      } else {
-        const { error: verifyError } = await signUp.verifications.verifyEmailCode({ code });
-        if (verifyError) return setError("That code didn't match. Check your email and try again.");
-        await signUp.finalize();
+      const resource = flow === 'signIn' ? signIn : signUp;
+      const { error: verifyError } =
+        flow === 'signIn'
+          ? await signIn.emailCode.verifyCode({ code })
+          : await signUp.verifications.verifyEmailCode({ code });
+      if (verifyError) {
+        setError(
+          hasCode(verifyError, 'form_code_incorrect') ? "That code didn't match. Check your email and try again." : GENERIC_ERROR,
+        );
+        return;
       }
+      const { error: finalizeError } = await resource.finalize();
+      if (finalizeError) setError(GENERIC_ERROR);
     } catch {
       setError(GENERIC_ERROR);
     } finally {
@@ -148,20 +166,16 @@ export default function SignIn() {
                 Sent to <Text style={{ color: colors.ink }}>{emailAddress}</Text>{'. Check spam if it isn’t there in a minute.'}
               </Text>
             </View>
-            <TextField
-              label="6-digit code"
-              value={code}
-              onChangeText={(t) => setCode(t.replace(/\D/g, ''))}
-              keyboardType="number-pad"
-              textContentType="oneTimeCode"
-              autoComplete="one-time-code"
-              maxLength={6}
-              autoFocus
-              error={error}
-            />
+            <CodeField value={code} onChange={setCode} error={error} />
             <Button label="Verify" onPress={verify} loading={busy} disabled={code.length !== 6} />
             <View style={styles.links}>
-              <Button label="Resend code" variant="text" onPress={sendCode} disabled={busy} />
+              {resendIn > 0 ? (
+                <Text style={[type.bodySmall, type.figure, { color: colors.muted }]}>
+                  Resend code in 0:{String(resendIn).padStart(2, '0')}
+                </Text>
+              ) : (
+                <Button label="Resend code" variant="text" onPress={sendCode} disabled={busy} />
+              )}
               <Button label="Change email" variant="text" onPress={changeEmail} />
             </View>
           </ScrollView>

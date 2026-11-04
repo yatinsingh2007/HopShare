@@ -12,7 +12,7 @@ export type PublicMe = {
   profileComplete: boolean;
 };
 
-export type ProfilePatch = { firstName?: string; upiId?: string };
+export type ProfilePatch = { firstName: string };
 
 /** Loads the signed-in rider's profile from our API. */
 export function useMe() {

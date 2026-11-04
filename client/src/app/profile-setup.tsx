@@ -1,33 +1,32 @@
 import { useState } from 'react';
 import { StyleSheet, Text } from 'react-native';
 import { router } from 'expo-router';
+import { useUser } from '@clerk/expo';
 import { Screen } from '@/components/Screen';
 import { Button } from '@/components/Button';
 import { TextField } from '@/components/TextField';
 import { useMe } from '@/hooks/useMe';
 import { ApiError } from '@/services/api';
 import { useTheme } from '@/context/ThemeContext';
+import { type } from '@/theme/type';
 
+/** One question after sign-up, only for riders we have no name for. */
 export default function ProfileSetup() {
   const { colors } = useTheme();
-  const { me, update } = useMe();
-  const [firstName, setFirstName] = useState(me?.firstName ?? '');
-  const [upiId, setUpiId] = useState(me?.upiId ?? '');
-  const [upiError, setUpiError] = useState<string | null>(null);
-  const [formError, setFormError] = useState<string | null>(null);
+  const { user } = useUser();
+  const { update } = useMe();
+  const [firstName, setFirstName] = useState(user?.firstName ?? '');
+  const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
     setSaving(true);
-    setUpiError(null);
-    setFormError(null);
+    setError(null);
     try {
-      await update({ firstName, upiId });
+      await update({ firstName: firstName.trim() });
       router.replace('/home');
     } catch (e) {
-      const message = e instanceof ApiError ? e.message : 'Something went wrong. Please try again.';
-      if (message.includes('UPI')) setUpiError(message);
-      else setFormError(message);
+      setError(e instanceof ApiError ? e.message : 'Something went wrong. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -35,7 +34,7 @@ export default function ProfileSetup() {
 
   return (
     <Screen>
-      <Text style={[styles.heading, { color: colors.ink }]}>What should riders call you?</Text>
+      <Text style={[type.headline, styles.heading, { color: colors.ink }]}>What should riders call you?</Text>
       <TextField
         label="First name"
         helper="Only your first name is shown to other riders."
@@ -43,24 +42,16 @@ export default function ProfileSetup() {
         onChangeText={setFirstName}
         autoComplete="given-name"
         autoCapitalize="words"
+        autoFocus
+        returnKeyType="done"
+        onSubmitEditing={() => firstName.trim() && !saving && save()}
+        error={error}
       />
-      <TextField
-        label="Your UPI ID"
-        helper="So riders can pay you back when you book the cab."
-        placeholder="name@bank"
-        value={upiId}
-        onChangeText={setUpiId}
-        autoCapitalize="none"
-        autoCorrect={false}
-        error={upiError}
-      />
-      <Button label="Continue" onPress={save} loading={saving} disabled={!firstName.trim() || !upiId.trim()} />
-      {formError ? <Text style={[styles.error, { color: colors.danger }]}>{formError}</Text> : null}
+      <Button label="Continue" onPress={save} loading={saving} disabled={!firstName.trim()} />
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  heading: { fontSize: 26, fontWeight: '800', letterSpacing: -0.5, marginTop: 12 },
-  error: { fontSize: 14 },
+  heading: { marginTop: 12 },
 });
