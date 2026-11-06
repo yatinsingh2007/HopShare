@@ -8,9 +8,10 @@ import {
   SchibstedGrotesk_700Bold,
   SchibstedGrotesk_800ExtraBold,
 } from '@expo-google-fonts/schibsted-grotesk';
-import { ClerkProvider, useAuth } from '@clerk/expo';
+import { ClerkProvider } from '@clerk/expo';
 import { tokenCache } from '@clerk/expo/token-cache';
 import { ThemeContext, type ThemePreference } from '@/context/ThemeContext';
+import { AuthProvider, useSession } from '@/context/AuthContext';
 import { palettes } from '@/theme/tokens';
 import { Loading } from '@/components/Loading';
 
@@ -24,9 +25,9 @@ const getPublishableKey = () => {
 const publishableKey = getPublishableKey();
 const THEME_KEY = 'hopshare.themePreference';
 
-/** Signed out: only the (auth) screens exist. Signed in: only the tabs and profile setup. */
+// signed out: only the (auth) screens exist. Signed in: only the tabs and profile setup.
 function RootStack() {
-  const { isLoaded, isSignedIn } = useAuth();
+  const { isLoaded, isSignedIn } = useSession();
   if (!isLoaded) return <Loading />;
   return (
     <Stack screenOptions={{ headerShown: false }}>
@@ -34,7 +35,7 @@ function RootStack() {
       <Stack.Protected guard={!isSignedIn}>
         <Stack.Screen name="(auth)" />
       </Stack.Protected>
-      <Stack.Protected guard={!!isSignedIn}>
+      <Stack.Protected guard={isSignedIn}>
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="profile-setup" />
       </Stack.Protected>
@@ -81,9 +82,11 @@ export default function RootLayout() {
 
   return (
     <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache}>
-      <ThemeContext.Provider value={theme}>
-        <RootStack />
-      </ThemeContext.Provider>
+      <AuthProvider>
+        <ThemeContext.Provider value={theme}>
+          <RootStack />
+        </ThemeContext.Provider>
+      </AuthProvider>
     </ClerkProvider>
   );
 }

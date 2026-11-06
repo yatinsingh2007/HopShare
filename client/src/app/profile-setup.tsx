@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { StyleSheet, Text } from 'react-native';
 import { router } from 'expo-router';
-import { useUser } from '@clerk/expo';
 import { Screen } from '@/components/Screen';
 import { Button } from '@/components/Button';
 import { TextField } from '@/components/TextField';
@@ -13,9 +12,8 @@ import { type } from '@/theme/type';
 /** One question after sign-up, only for riders we have no name for. */
 export default function ProfileSetup() {
   const { colors } = useTheme();
-  const { user } = useUser();
   const { update } = useMe();
-  const [firstName, setFirstName] = useState(user?.firstName ?? '');
+  const [firstName, setFirstName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 

@@ -1,13 +1,13 @@
 import { StyleSheet, Text } from 'react-native';
-import { useAuth } from '@clerk/expo';
 import { Screen } from '@/components/Screen';
 import { Button } from '@/components/Button';
 import { useMe } from '@/hooks/useMe';
 import { useTheme } from '@/context/ThemeContext';
+import { useSession } from '@/context/AuthContext';
 
 export default function Profile() {
   const { me } = useMe();
-  const { signOut } = useAuth();
+  const { signOut } = useSession();
   const { colors } = useTheme();
 
   return (

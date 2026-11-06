@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react';
 import { KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useSignIn, useSignUp, useSSO } from '@clerk/expo';
+import { useAuth, useSignIn, useSignUp, useSSO } from '@clerk/expo';
 import { Screen } from '@/components/Screen';
 import { Button } from '@/components/Button';
 import { TextField } from '@/components/TextField';
 import { CodeField } from '@/components/CodeField';
 import { Icon } from '@/components/Icon';
 import { useTheme } from '@/context/ThemeContext';
+import { useSession } from '@/context/AuthContext';
+import { ApiError } from '@/services/api';
 import { type } from '@/theme/type';
 
 type ClerkResultError = { code?: string; errors?: { code?: string }[] } | null;
@@ -61,6 +63,8 @@ export default function SignIn() {
   const { signIn } = useSignIn();
   const { signUp } = useSignUp();
   const { startSSOFlow } = useSSO();
+  const clerk = useAuth();
+  const session = useSession();
 
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
@@ -72,6 +76,25 @@ export default function SignIn() {
   const [resendIn, setResendIn] = useState(0);
 
   const emailAddress = email.trim().toLowerCase();
+
+  // a Clerk session left over from an earlier sign-in would block a new one
+  useEffect(() => {
+    if (clerk.isSignedIn) clerk.signOut().catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Clerk has checked the code (or Google). Swap its token for our own and drop the Clerk session.
+  const finishSignIn = async () => {
+    const clerkToken = await clerk.getToken();
+    if (!clerkToken) throw new Error('No Clerk token');
+    try {
+      await session.signIn(clerkToken);
+    } finally {
+      await clerk.signOut().catch(() => {});
+    }
+  };
+
+  const showError = (e: unknown) => setError(e instanceof ApiError ? e.message : GENERIC_ERROR);
 
   useEffect(() => {
     if (resendIn <= 0) return;
@@ -125,9 +148,13 @@ export default function SignIn() {
         return;
       }
       const { error: finalizeError } = await resource.finalize();
-      if (finalizeError) setError(GENERIC_ERROR);
-    } catch {
-      setError(GENERIC_ERROR);
+      if (finalizeError) {
+        setError(GENERIC_ERROR);
+        return;
+      }
+      await finishSignIn();
+    } catch (e) {
+      showError(e);
     } finally {
       setBusy(false);
     }
@@ -138,9 +165,11 @@ export default function SignIn() {
     setGoogleBusy(true);
     try {
       const { createdSessionId, setActive } = await startSSOFlow({ strategy: 'oauth_google' });
-      if (createdSessionId && setActive) await setActive({ session: createdSessionId });
-    } catch {
-      setError(GENERIC_ERROR);
+      if (!createdSessionId || !setActive) return;
+      await setActive({ session: createdSessionId });
+      await finishSignIn();
+    } catch (e) {
+      showError(e);
     } finally {
       setGoogleBusy(false);
     }
