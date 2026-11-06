@@ -1,8 +1,8 @@
-# UniHop — Mobile App Design
+# HopShare — Mobile App Design
 
 **Date:** 2026-10-26
 **Status:** Draft for approval
-**Scope:** v1 of the UniHop mobile app (Expo client + Express server)
+**Scope:** v1 of the HopShare mobile app (Expo client + Express server)
 
 Items marked *(Claude's call)* are defaults chosen during design that the owner did not explicitly decide; they can be changed.
 
@@ -10,7 +10,7 @@ Items marked *(Claude's call)* are defaults chosen during design that the owner 
 
 ## 1. Intent and why
 
-UniHop matches people (not only students — anyone commuting) who are going the same way at the same time, so they can share one cab and split the fare up to four ways. Riders book the cab themselves in an outside app (Uber, Ola, Rapido, auto); UniHop handles finding the group, coordinating the pickup, keeping everyone safe, and splitting the cost.
+HopShare matches people (not only students — anyone commuting) who are going the same way at the same time, so they can share one cab and split the fare up to four ways. Riders book the cab themselves in an outside app (Uber, Ola, Rapido, auto); HopShare handles finding the group, coordinating the pickup, keeping everyone safe, and splitting the cost.
 
 The project is also a portfolio piece. It should **demonstrate product thinking** to product-company recruiters: every screen exists for a stated reason, the trade-offs are deliberate and explainable, and the app addresses the real worries of sharing a cab with strangers (cost, safety, effort, getting paid back).
 
@@ -32,8 +32,8 @@ Launch market: **India** (designed for it).
 - Light and dark mode, both first-class.
 
 **Non-goals (v1)**
-- UniHop does not book cabs or integrate with Uber/Ola APIs.
-- UniHop does not hold or move money (no payment gateway in v1).
+- HopShare does not book cabs or integrate with Uber/Ola APIs.
+- HopShare does not hold or move money (no payment gateway in v1).
 - No in-app drivers.
 - No distance-based (uneven) fare splitting.
 - No in-app chat *(Claude's call — coordination happens via the live map and status; revisit if needed)*.
@@ -94,7 +94,7 @@ Mockups from the design session live in `.superpowers/brainstorm/` (git-ignored,
 - Tapping **Join group** (or **Start my own group**) checks verification. If unverified, the verification flow starts; on success the user lands back on the exact group they tried to join.
 
 ### 4.7 Verification (DigiLocker)
-1. **The ask:** "Everyone in UniHop is a real, verified person. That includes you. ~60 seconds, once." Option to continue browsing instead.
+1. **The ask:** "Everyone in HopShare is a real, verified person. That includes you. ~60 seconds, once." Option to continue browsing instead.
 2. **What we see / don't see:**
    - Received: name, date of birth (18+ check), gender (optional, for future women-only groups).
    - Never stored: Aadhaar number, address, documents.

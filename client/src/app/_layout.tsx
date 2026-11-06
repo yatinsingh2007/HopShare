@@ -22,7 +22,7 @@ const getPublishableKey = () => {
   return key;
 };
 const publishableKey = getPublishableKey();
-const THEME_KEY = 'unihop.themePreference';
+const THEME_KEY = 'hopshare.themePreference';
 
 /** Signed out: only the (auth) screens exist. Signed in: only the tabs and profile setup. */
 function RootStack() {
