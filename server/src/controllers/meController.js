@@ -1,11 +1,9 @@
 const { toPublicMe, updateName } = require('../services/userService');
 
-/** The signed-in rider. requireUser has already checked the Clerk token and loaded req.user. */
 const getMe = (req, res) => {
   res.json({ success: true, data: toPublicMe(req.user) });
 };
 
-/** Saves the first name asked for right after sign-up. */
 const updateMe = async (req, res) => {
   const firstName = typeof req.body?.firstName === 'string' ? req.body.firstName.trim() : '';
   if (firstName.length < 1 || firstName.length > 50) {

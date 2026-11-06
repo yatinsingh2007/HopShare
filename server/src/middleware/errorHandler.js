@@ -1,4 +1,3 @@
-/** Every error leaves the API in the same shape: { success: false, message }. */
 const notFound = (req, res) => {
   res.status(404).json({ success: false, message: 'Not found.' });
 };

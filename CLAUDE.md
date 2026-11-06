@@ -16,7 +16,7 @@
 - **Caching & Pub/Sub:** Upstash Redis (Serverless)
 - **Real-Time Communication:** WebSockets (`socket.io` / `socket.io-client`)
 - **Maps & Geocoding:** OpenStreetMap (Nominatim API)
-- **Authentication & Security:** Clerk (phone OTP / Google) + DigiLocker ID verification
+- **Authentication & Security:** Clerk verifies the email code / Google sign-in only; our server issues its own JWT access tokens + rotating refresh tokens (sessions in Postgres). DigiLocker for ID verification
 - **Deployment & Hosting:** Render / Koyeb
 
 ---
@@ -24,8 +24,10 @@
 ## 🏗 Architecture & Key Modules
 
 1. **Authentication Engine:**
-   - Open to all users; Clerk handles sign-in (phone OTP / Google).
-   - Express and the Socket.io handshake verify Clerk session tokens.
+   - Open to all users. Clerk only verifies the email code / Google account.
+   - `POST /api/auth/login` checks that Clerk proof once, then the server owns auth: it issues its own
+     access token (JWT, 15 min) and refresh token (30 days, rotated on use, stored hashed in `Session`).
+   - Express (`requireUser`) and the Socket.io handshake verify **our** access tokens, not Clerk's.
    - DigiLocker (via an aggregator) marks users ID-verified; enforced server-side.
 
 2. **Geospatial & Proximity Engine:**
@@ -78,7 +80,7 @@
 
 ## 📌 Development Rules & Instructions for Claude
 
-- **Security First:** Never hardcode secrets, database URLs (Neon `DATABASE_URL`), or Clerk secret keys. Use `.env` references.
+- **Security First:** Never hardcode secrets, database URLs (Neon `DATABASE_URL`), Clerk secret keys or `JWT_SECRET`. Use `.env` references.
 - **Clean Architecture:** Keep business logic outside of socket handler definitions; delegate to service files.
 - **Error Handling:** Always return consistent JSON error formats from Express: `{ "success": false, "message": "..." }`.
 - **Mobile Performance:** Minimize unnecessary re-renders when receiving high-frequency WebSocket location coordinates.
