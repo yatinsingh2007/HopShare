@@ -36,28 +36,33 @@ model User {
   phoneNumber String?    @unique
   upiId       String?
 
-  rides            Ride[]    @relation("RideUsers")
-  createdRides     Ride[]    @relation("RideCreator")
+  rides            Ride[]        @relation("RideUsers")
+  createdRides     Ride[]        @relation("RideCreator")
   chats            Chat[]
   sentMessages     Message[]
-  paymentsSent     Payment[] @relation("PaymentFrom")
-  paymentsReceived Payment[] @relation("PaymentTo")
+  paymentsSent     Payment[]     @relation("PaymentFrom")
+  paymentsReceived Payment[]     @relation("PaymentTo")
+  joinRequests     JoinRequest[]
 }
 
 model Ride {
-  id            String                                @id @default(uuid())
-  paymentStatus PaymentStatus                         @default(PENDING)
-  joinable      Boolean                               @default(true)
+  id              String                                @id @default(uuid())
+  paymentStatus   PaymentStatus                         @default(PENDING)
+  joinable        Boolean                               @default(true)
   // [lon, lat] via ST_MakePoint(lon, lat); written with raw SQL
-  source        Unsupported("geography(Point, 4326)")
-  time          DateTime
-  destination   Unsupported("geography(Point, 4326)")
-  rideCreatorId String
+  source          Unsupported("geography(Point, 4326)")
+  time            DateTime
+  destination     Unsupported("geography(Point, 4326)")
+  // Readable place names, e.g. "Rishihood University, Sonipat"
+  sourceName      String
+  destinationName String
+  rideCreatorId   String
 
-  rideCreator User      @relation("RideCreator", fields: [rideCreatorId], references: [id])
-  users       User[]    @relation("RideUsers")
-  chat        Chat?
-  payments    Payment[]
+  rideCreator  User          @relation("RideCreator", fields: [rideCreatorId], references: [id])
+  users        User[]        @relation("RideUsers")
+  chat         Chat?
+  payments     Payment[]
+  joinRequests JoinRequest[]
 }
 
 model Chat {
@@ -94,4 +99,31 @@ model Payment {
   to   User @relation("PaymentTo", fields: [toId], references: [id])
   ride Ride @relation(fields: [rideId], references: [id], onDelete: Cascade)
   chat Chat @relation(fields: [chatId], references: [id], onDelete: Cascade)
+}
+
+enum JoinRequestStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  CANCELLED
+}
+
+// A rider asks to join a ride; the ride creator accepts or rejects it.
+// Holds the requester's own stops, so the creator can see them on the map
+// and, once accepted, it records where that member gets on and off.
+model JoinRequest {
+  id              String                                @id @default(uuid())
+  rideId          String
+  userId          String
+  status          JoinRequestStatus                     @default(PENDING)
+  // [lon, lat] via ST_MakePoint(lon, lat); written with raw SQL
+  pickup          Unsupported("geography(Point, 4326)")
+  pickupName      String
+  destination     Unsupported("geography(Point, 4326)")
+  destinationName String
+  createdAt       DateTime                              @default(now())
+  respondedAt     DateTime?
+
+  ride Ride @relation(fields: [rideId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id])
 }
