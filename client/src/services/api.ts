@@ -25,7 +25,7 @@ export async function apiFetch<T>(path: string, { token, method = 'GET', body }:
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   } catch {
-    throw new ApiError(0, "Can't reach UniHop. Check your connection.");
+    throw new ApiError(0, "Can't reach HopShare. Check your connection.");
   }
 
   const json = await res.json().catch(() => null);

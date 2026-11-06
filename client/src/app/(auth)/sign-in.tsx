@@ -29,7 +29,7 @@ const COPY = {
   login: {
     title: 'Welcome back',
     body: "Enter the email you signed up with and we'll send you a code.",
-    switchPrompt: 'New to UniHop?',
+    switchPrompt: 'New to HopShare?',
     switchLabel: 'Create an account',
     switchTo: 'signup',
   },

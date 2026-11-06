@@ -1,7 +1,7 @@
-# UniHop - Project Guidelines & Claude Context
+# HopShare - Project Guidelines & Claude Context
 
 ## 🚀 Overview
-**UniHop** is a zero-cost, cross-platform mobile application designed to match anyone commuting on identical routes — students, office-goers, and everyday travelers — to share rides and split transit costs by up to 75%. 
+**HopShare** is a zero-cost, cross-platform mobile application designed to match anyone commuting on identical routes — students, office-goers, and everyday travelers — to share rides and split transit costs by up to 75%. 
 
 - **Primary Goal:** Group up to 4 passengers within a 1km radius using real-time geospatial matching.
 - **Latency Target:** Real-time location streaming with sub-150ms latency.

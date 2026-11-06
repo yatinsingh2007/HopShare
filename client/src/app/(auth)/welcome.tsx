@@ -97,9 +97,9 @@ export default function Welcome() {
 
   return (
     <Screen style={styles.screen}>
-      <View style={styles.brand} accessible accessibilityRole="header" accessibilityLabel="UniHop">
+      <View style={styles.brand} accessible accessibilityRole="header" accessibilityLabel="HopShare">
         <Image source={require('../../../assets/images/mark.png')} style={[styles.mark, { tintColor: colors.ink }]} />
-        <Text style={[styles.wordmark, { color: colors.ink }]}>UniHop</Text>
+        <Text style={[styles.wordmark, { color: colors.ink }]}>HopShare</Text>
       </View>
 
       <Animated.ScrollView
