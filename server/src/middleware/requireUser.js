@@ -1,15 +1,13 @@
-const { clerkClient, getAuth } = require('@clerk/express');
-const { findOrCreateUser } = require('../services/userService');
+const { getUserFromAccessToken } = require('../services/authService');
 
-/**
- * Lets the request through only with a valid Clerk session token,
- * and puts our own User row on req.user (created on the first visit).
- */
 const requireUser = async (req, res, next) => {
-  const { userId } = getAuth(req);
-  if (!userId) return res.status(401).json({ success: false, message: 'Please sign in.' });
+  const token = req.get('authorization')?.replace('Bearer ', '');
+  const user = token && (await getUserFromAccessToken(token));
 
-  req.user = await findOrCreateUser(userId, () => clerkClient.users.getUser(userId));
+  if (!user) return res.status(401).json({ success: false, message: 'Please sign in.' });
+  if (user.status !== 'ACTIVE') return res.status(403).json({ success: false, message: 'This account is suspended.' });
+
+  req.user = user;
   next();
 };
 

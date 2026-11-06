@@ -43,6 +43,7 @@ model User {
   paymentsSent     Payment[]     @relation("PaymentFrom")
   paymentsReceived Payment[]     @relation("PaymentTo")
   joinRequests     JoinRequest[]
+  sessions         Session[]
 }
 
 model Ride {
@@ -126,4 +127,16 @@ model JoinRequest {
 
   ride Ride @relation(fields: [rideId], references: [id], onDelete: Cascade)
   user User @relation(fields: [userId], references: [id])
+}
+
+// one row per signed-in device
+model Session {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
