@@ -1,6 +1,11 @@
 const authService = require('../services/authService');
 const { toPublicMe } = require('../services/userService');
 
+const warmUp = async (req, res) => {
+  await authService.warmUp();
+  res.json({ success: true });
+};
+
 const login = async (req, res) => {
   const { clerkToken } = req.body ?? {};
   if (!clerkToken) return res.status(400).json({ success: false, message: 'Missing sign-in token.' });
@@ -29,4 +34,4 @@ const logoutAll = async (req, res) => {
   res.json({ success: true, message: 'Signed out on all devices.' });
 };
 
-module.exports = { login, refresh, logout, logoutAll };
+module.exports = { warmUp, login, refresh, logout, logoutAll };

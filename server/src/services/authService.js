@@ -36,11 +36,11 @@ const findSession = async (refreshToken) => {
   return session;
 };
 
-// Clerk only tells us the email code / Google sign-in was valid. After that we use our own tokens.
+// Clerk only tells us the email code was valid. After that we use our own tokens.
 const login = async (clerkToken) => {
   let clerkId;
   try {
-    ({ sub: clerkId } = await verifyToken(clerkToken, { secretKey: process.env.CLERK_SECRET_KEY }));
+    ({ sub: clerkId } = await verifyToken(clerkToken, { jwtKey: process.env.CLERK_JWT_KEY, secretKey: process.env.CLERK_SECRET_KEY }));
   } catch {
     return null;
   }
@@ -76,4 +76,7 @@ const getUserFromAccessToken = async (accessToken) => {
   return session.user;
 };
 
-module.exports = { login, refresh, logout, logoutAll, getUserFromAccessToken };
+// Neon sleeps when idle; the app calls this as sign-in opens so the database is awake by login
+const warmUp = () => prisma.$queryRaw`SELECT 1`;
+
+module.exports = { warmUp, login, refresh, logout, logoutAll, getUserFromAccessToken };
