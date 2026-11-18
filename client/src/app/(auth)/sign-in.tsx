@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useAuth, useSignIn, useSignUp } from '@clerk/expo';
+import { useAuth, useSignIn, useSignUp, useSSO } from '@clerk/expo';
 import { Screen } from '@/components/Screen';
 import { Button } from '@/components/Button';
 import { TextField } from '@/components/TextField';
@@ -66,6 +66,7 @@ export default function SignIn() {
 
   const { signIn } = useSignIn();
   const { signUp } = useSignUp();
+  const { startSSOFlow } = useSSO();
   const clerk = useAuth();
   const session = useSession();
 
@@ -74,6 +75,7 @@ export default function SignIn() {
   const [step, setStep] = useState<'email' | 'code'>('email');
   const [flow, setFlow] = useState<'signIn' | 'signUp'>('signIn');
   const [busy, setBusy] = useState(false);
+  const [googleBusy, setGoogleBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resendIn, setResendIn] = useState(0);
 
@@ -87,7 +89,7 @@ export default function SignIn() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Clerk has checked the code. Swap its token for our own and drop the Clerk session.
+  // Clerk has checked the code (or Google). Swap its token for our own and drop the Clerk session.
   const finishSignIn = async () => {
     const clerkToken = await clerk.getToken();
     if (!clerkToken) throw new Error('No Clerk token');
@@ -164,6 +166,22 @@ export default function SignIn() {
     }
   };
 
+  // Google gives us the name too, so new riders skip the name question
+  const continueWithGoogle = async () => {
+    setError(null);
+    setGoogleBusy(true);
+    try {
+      const { createdSessionId, setActive } = await startSSOFlow({ strategy: 'oauth_google' });
+      if (!createdSessionId || !setActive) return;
+      await setActive({ session: createdSessionId });
+      await finishSignIn();
+    } catch (e) {
+      showError(e);
+    } finally {
+      setGoogleBusy(false);
+    }
+  };
+
   const changeEmail = () => {
     setError(null);
     setCode('');
@@ -237,7 +255,22 @@ export default function SignIn() {
             </View>
           </View>
 
-          <Button label="Send code" onPress={sendCode} loading={busy} disabled={!isEmail(emailAddress)} />
+          <Button label="Send code" onPress={sendCode} loading={busy} disabled={!isEmail(emailAddress) || googleBusy} />
+
+          <View style={styles.or}>
+            <View style={[styles.orLine, { backgroundColor: colors.line }]} />
+            <Text style={[type.bodySmall, { color: colors.muted }]}>or</Text>
+            <View style={[styles.orLine, { backgroundColor: colors.line }]} />
+          </View>
+
+          <Button
+            label="Continue with Google"
+            variant="ghost"
+            image={require('../../../assets/images/google-g.png')}
+            onPress={continueWithGoogle}
+            loading={googleBusy}
+            disabled={busy}
+          />
         </ScrollView>
       </KeyboardAvoidingView>
 
@@ -256,6 +289,8 @@ const styles = StyleSheet.create({
   intro: { gap: 8, marginBottom: 8 },
   group: { gap: 10 },
   promise: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  or: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  orLine: { flex: 1, height: 1 },
   links: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 48 },
   switch: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 2 },
 });
