@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useAuth, useSignIn, useSignUp, useSSO } from '@clerk/expo';
+import { useAuth, useSignIn, useSignUp } from '@clerk/expo';
 import { Screen } from '@/components/Screen';
 import { Button } from '@/components/Button';
 import { TextField } from '@/components/TextField';
@@ -9,7 +9,7 @@ import { CodeField } from '@/components/CodeField';
 import { Icon } from '@/components/Icon';
 import { useTheme } from '@/context/ThemeContext';
 import { useSession } from '@/context/AuthContext';
-import { ApiError } from '@/services/api';
+import { ApiError, apiFetch } from '@/services/api';
 import { type } from '@/theme/type';
 
 type ClerkResultError = { code?: string; errors?: { code?: string }[] } | null;
@@ -18,6 +18,10 @@ const hasCode = (error: ClerkResultError, code: string) =>
   !!error && (error.code === code || !!error.errors?.some((e) => e.code === code));
 
 const GENERIC_ERROR = 'Something went wrong. Please try again.';
+const RATE_LIMITED = 'Too many codes requested. Wait a few minutes and try again.';
+
+const sendError = (error: ClerkResultError) =>
+  hasCode(error, 'verification_code_rate_limit_exceeded') ? RATE_LIMITED : GENERIC_ERROR;
 const RESEND_SECONDS = 30;
 
 const COPY = {
@@ -62,7 +66,6 @@ export default function SignIn() {
 
   const { signIn } = useSignIn();
   const { signUp } = useSignUp();
-  const { startSSOFlow } = useSSO();
   const clerk = useAuth();
   const session = useSession();
 
@@ -71,7 +74,6 @@ export default function SignIn() {
   const [step, setStep] = useState<'email' | 'code'>('email');
   const [flow, setFlow] = useState<'signIn' | 'signUp'>('signIn');
   const [busy, setBusy] = useState(false);
-  const [googleBusy, setGoogleBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resendIn, setResendIn] = useState(0);
 
@@ -80,10 +82,12 @@ export default function SignIn() {
   // a Clerk session left over from an earlier sign-in would block a new one
   useEffect(() => {
     if (clerk.isSignedIn) clerk.signOut().catch(() => {});
+    // wake the database while the user is still choosing how to sign in
+    apiFetch('/api/auth/warmup', { token: null }).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Clerk has checked the code (or Google). Swap its token for our own and drop the Clerk session.
+  // Clerk has checked the code. Swap its token for our own and drop the Clerk session.
   const finishSignIn = async () => {
     const clerkToken = await clerk.getToken();
     if (!clerkToken) throw new Error('No Clerk token');
@@ -111,13 +115,13 @@ export default function SignIn() {
       if (!signInError) {
         setFlow('signIn');
       } else if (!hasCode(signInError, 'form_identifier_not_found')) {
-        setError(GENERIC_ERROR);
+        setError(sendError(signInError));
         return;
       } else {
         const created = await signUp.create({ emailAddress });
         const sent = created.error ? created : await signUp.verifications.sendEmailCode();
         if (sent.error) {
-          setError(GENERIC_ERROR);
+          setError(sendError(sent.error));
           return;
         }
         setFlow('signUp');
@@ -157,21 +161,6 @@ export default function SignIn() {
       showError(e);
     } finally {
       setBusy(false);
-    }
-  };
-
-  const continueWithGoogle = async () => {
-    setError(null);
-    setGoogleBusy(true);
-    try {
-      const { createdSessionId, setActive } = await startSSOFlow({ strategy: 'oauth_google' });
-      if (!createdSessionId || !setActive) return;
-      await setActive({ session: createdSessionId });
-      await finishSignIn();
-    } catch (e) {
-      showError(e);
-    } finally {
-      setGoogleBusy(false);
     }
   };
 
@@ -248,22 +237,7 @@ export default function SignIn() {
             </View>
           </View>
 
-          <Button label="Send code" onPress={sendCode} loading={busy} disabled={!isEmail(emailAddress) || googleBusy} />
-
-          <View style={styles.or}>
-            <View style={[styles.orLine, { backgroundColor: colors.line }]} />
-            <Text style={[type.bodySmall, { color: colors.muted }]}>or</Text>
-            <View style={[styles.orLine, { backgroundColor: colors.line }]} />
-          </View>
-
-          <Button
-            label="Continue with Google"
-            variant="ghost"
-            image={require('../../../assets/images/google-g.png')}
-            onPress={continueWithGoogle}
-            loading={googleBusy}
-            disabled={busy}
-          />
+          <Button label="Send code" onPress={sendCode} loading={busy} disabled={!isEmail(emailAddress)} />
         </ScrollView>
       </KeyboardAvoidingView>
 
@@ -282,8 +256,6 @@ const styles = StyleSheet.create({
   intro: { gap: 8, marginBottom: 8 },
   group: { gap: 10 },
   promise: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  or: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  orLine: { flex: 1, height: 1 },
   links: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 48 },
   switch: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 2 },
 });
