@@ -1,13 +1,15 @@
-import { useEffect, useMemo, useRef } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { useEffect, useMemo, useRef, type ReactNode } from 'react';
+import { StyleSheet, TurboModuleRegistry, View } from 'react-native';
 import Animated, {
+  cubicBezier,
   Easing,
   useAnimatedStyle,
+  useReducedMotion,
   useSharedValue,
   withRepeat,
   withTiming,
 } from 'react-native-reanimated';
-import { Camera, GeoJSONSource, Layer, Map, Marker, type CameraRef } from '@maplibre/maplibre-react-native';
+import type { CameraRef } from '@maplibre/maplibre-react-native';
 import { useTheme } from '@/context/ThemeContext';
 import type { Place } from '@/services/cabApps';
 
@@ -17,6 +19,29 @@ const STYLES = {
 };
 // Until GPS answers, show India rather than the middle of the ocean.
 const INDIA: [number, number] = [78.9629, 22.5937];
+
+// Expo Go has no MapLibre native code, so only load it when the app was built with it.
+const hasMapLibre = TurboModuleRegistry.get('MLRNCameraModule') != null;
+const MapLibre: typeof import('@maplibre/maplibre-react-native') | null = !hasMapLibre
+  ? null
+  : require('@maplibre/maplibre-react-native'); // eslint-disable-line @typescript-eslint/no-require-imports
+
+const EASE_OUT = cubicBezier(0.23, 1, 0.32, 1);
+// markers settle in from slightly above, so a new pick reads as "placed here"
+const appear = (fromY: number) =>
+  ({
+    animationName: {
+      from: { opacity: 0, transform: [{ translateY: fromY }, { scale: 0.9 }] },
+      to: { opacity: 1, transform: [{ translateY: 0 }, { scale: 1 }] },
+    },
+    animationDuration: '280ms',
+    animationTimingFunction: EASE_OUT,
+  }) as const;
+
+function Appear({ fromY, children }: { fromY: number; children: ReactNode }) {
+  const reduced = useReducedMotion();
+  return <Animated.View style={reduced ? null : appear(fromY)}>{children}</Animated.View>;
+}
 
 function PickupDot() {
   const { colors } = useTheme();
@@ -90,6 +115,9 @@ export function RouteMap({ pickup, destination, bottomInset }: {
     [pickup, destination],
   );
 
+  if (!MapLibre) return <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.card }]} />;
+  const { Camera, GeoJSONSource, Layer, Map, Marker } = MapLibre;
+
   return (
     <Map
       style={StyleSheet.absoluteFill}
@@ -113,12 +141,16 @@ export function RouteMap({ pickup, destination, bottomInset }: {
       ) : null}
       {pickup ? (
         <Marker id="pickup" lngLat={[pickup.longitude, pickup.latitude]} anchor="center">
-          <PickupDot />
+          <Appear key={`${pickup.longitude},${pickup.latitude}`} fromY={-6}>
+            <PickupDot />
+          </Appear>
         </Marker>
       ) : null}
       {destination ? (
         <Marker id="destination" lngLat={[destination.longitude, destination.latitude]} anchor="bottom">
-          <DropPin />
+          <Appear key={`${destination.longitude},${destination.latitude}`} fromY={-14}>
+            <DropPin />
+          </Appear>
         </Marker>
       ) : null}
     </Map>
