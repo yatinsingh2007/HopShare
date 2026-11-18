@@ -10,7 +10,6 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import type { CameraRef } from '@maplibre/maplibre-react-native';
-import { WebRouteMap } from '@/components/WebRouteMap';
 import { useTheme } from '@/context/ThemeContext';
 import type { Place } from '@/services/cabApps';
 
@@ -21,7 +20,7 @@ const STYLES = {
 // Until GPS answers, show India rather than the middle of the ocean.
 const INDIA: [number, number] = [78.9629, 22.5937];
 
-// Expo Go has no MapLibre native code: there the map is drawn in a WebView instead.
+// Expo Go has no MapLibre native code, so only load it when the app was built with it.
 const hasMapLibre = TurboModuleRegistry.get('MLRNCameraModule') != null;
 const MapLibre: typeof import('@maplibre/maplibre-react-native') | null = !hasMapLibre
   ? null
@@ -116,7 +115,7 @@ export function RouteMap({ pickup, destination, bottomInset }: {
     [pickup, destination],
   );
 
-  if (!MapLibre) return <WebRouteMap pickup={pickup} destination={destination} bottomInset={bottomInset} />;
+  if (!MapLibre) return <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.card }]} />;
   const { Camera, GeoJSONSource, Layer, Map, Marker } = MapLibre;
 
   return (
