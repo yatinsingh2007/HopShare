@@ -1,3 +1,10 @@
+import Constants from 'expo-constants';
+
+// While developing, the server runs on the same computer as Metro, so reuse Metro's address.
+// That way a phone on any Wi-Fi finds it without setting the Mac's IP by hand.
+const devHost = Constants.expoConfig?.hostUri?.split(':')[0];
+const API_URL = process.env.EXPO_PUBLIC_API_URL || (devHost ? `http://${devHost}:4000` : '');
+
 export class ApiError extends Error {
   status: number;
 
@@ -16,7 +23,7 @@ type ApiOptions = {
 export async function apiFetch<T>(path: string, { token, method = 'GET', body }: ApiOptions): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(`${process.env.EXPO_PUBLIC_API_URL}${path}`, {
+    res = await fetch(`${API_URL}${path}`, {
       method,
       headers: {
         'Content-Type': 'application/json',
