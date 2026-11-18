@@ -12,6 +12,11 @@ const IOS: Partial<Record<AndroidSymbol, SFSymbol>> = {
   person: 'person.fill', currency_rupee: 'indianrupeesign', location_on: 'location.fill',
   directions_car: 'car.fill',
   home: 'house.fill',
+  my_location: 'location.circle',
+  history: 'clock.arrow.circlepath',
+  close: 'xmark',
+  bolt: 'bolt.fill',
+  group: 'person.3.fill',
 };
 
 export function Icon({ name, size = 20, color }: { name: AndroidSymbol; size?: number; color: ColorValue }) {
