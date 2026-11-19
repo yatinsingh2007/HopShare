@@ -55,6 +55,8 @@ Version 1 ships as an Android APK.
 
 ## System design
 
+The full end-to-end walkthrough (one ride from sign-in to payback, matching, real time, safety, fare split, trade-offs) is in [docs/system-design.md](docs/system-design.md).
+
 ```mermaid
 flowchart LR
     subgraph Phone["Android app (Expo)"]
