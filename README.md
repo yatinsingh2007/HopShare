@@ -29,12 +29,13 @@ That changes the hard problems:
 
 | Area | State |
 |---|---|
-| Sign-in: email code and Google (Clerk) | Done |
-| API that checks the Clerk session and creates users on first sign-in | Done |
+| Sign-in with an email code (Clerk checks the code) | Done |
+| Own auth on the server: access + refresh tokens, sessions per device | Done |
 | Database schema and migrations (Prisma, PostGIS) | Done |
+| Home screen: map, place search, live pickup location | Done |
 | One-tap Uber / Ola booking with the route filled in | Done (not yet on a screen) |
-| Place search and map | Next |
-| 1 km matching and groups | Planned |
+| Matched groups screen, join requests, 1 km matching | Next |
+| Google sign-in | Later |
 | Live location, group updates (Socket.io, Redis) | Planned |
 | DigiLocker verification, fare split and UPI payback | Planned |
 
@@ -45,19 +46,159 @@ That changes the hard problems:
 | Mobile app | React Native (Expo), TypeScript, Expo Router |
 | API | Node.js, Express |
 | Database | PostgreSQL + PostGIS on Neon, Prisma |
-| Sign-in | Clerk (email code, Google) |
-| Maps and places | OpenStreetMap |
+| Sign-in | Clerk email code, then our own JWT access + refresh tokens |
+| Maps and places | MapLibre + OpenFreeMap tiles, Photon (OpenStreetMap) search |
 | Real-time (planned) | Socket.io, Upstash Redis |
 | Hosting (planned) | Render |
 
 Version 1 ships as an Android APK.
+
+## System design
+
+```mermaid
+flowchart LR
+    subgraph Phone["Android app (Expo)"]
+        UI[Screens]
+        SS[(SecureStore<br/>our tokens)]
+    end
+
+    Clerk[Clerk<br/>email code only]
+    Photon[Photon / OSM<br/>place search]
+    Tiles[OpenFreeMap<br/>map tiles]
+    Cab[Uber / Ola<br/>deep links]
+
+    subgraph Server["Express server"]
+        REST[REST API<br/>/api/auth, /api/me]
+        IO[Socket.io<br/>planned]
+        SVC[Services]
+    end
+
+    PG[(Postgres + PostGIS<br/>Neon)]
+    RD[(Upstash Redis<br/>planned)]
+    DL[DigiLocker<br/>planned]
+
+    UI -- code --> Clerk
+    UI -- search --> Photon
+    UI -- tiles --> Tiles
+    UI -- book --> Cab
+    UI -- Bearer token --> REST
+    UI -. socket .-> IO
+    UI --- SS
+    REST --> SVC
+    IO -.-> SVC
+    SVC -- verify once at login --> Clerk
+    SVC --> PG
+    SVC -.-> RD
+    SVC -.-> DL
+```
+
+Solid lines are built; dotted lines are planned. HopShare never books the cab itself: it opens the cab app with the route filled in.
+
+### Sign-in
+
+Clerk only checks the email code. After that the server runs auth itself: it hands out a short-lived access token and a refresh token that changes every time it's used.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant App
+    participant Clerk
+    participant API as Server
+    participant DB as Postgres
+
+    App->>API: GET /api/auth/warmup (wakes Neon early)
+    App->>Clerk: email, then 6-digit code
+    Clerk-->>App: Clerk session token
+    App->>API: POST /api/auth/login { clerkToken }
+    API->>API: verify Clerk token once
+    API->>DB: find or create User, create Session
+    API-->>App: accessToken (15 min) + refreshToken (30 days)
+    App->>Clerk: sign out of Clerk
+
+    App->>API: requests with Bearer accessToken
+    API->>DB: session active? user not suspended?
+    API-->>App: data
+
+    App->>API: POST /api/auth/refresh (after a 401)
+    API->>DB: replace the refresh secret
+    API-->>App: new token pair
+```
+
+- Only a SHA-256 hash of the refresh secret is stored. Reusing an old refresh token revokes that device's session.
+- Logout (`/api/auth/logout`, `/api/auth/logout-all`) works at once, because every request checks the session.
+
+| Route | Does |
+|---|---|
+| `GET /api/auth/warmup` | Wakes the database when the sign-in screen opens |
+| `POST /api/auth/login` | Swaps a Clerk token for our tokens |
+| `POST /api/auth/refresh` | Gives a new token pair |
+| `POST /api/auth/logout` | Signs out this device |
+| `POST /api/auth/logout-all` | Signs out every device |
+| `GET` / `PATCH /api/me` | Reads / updates your profile (first name) |
+
+### Database
+
+```mermaid
+erDiagram
+    User ||--o{ Session : "signs in on"
+    User ||--o{ Ride : "creates"
+    User }o--o{ Ride : "rides in"
+    User ||--o{ JoinRequest : "asks to join"
+    Ride ||--o{ JoinRequest : "receives"
+    Ride ||--o| Chat : "has"
+    Chat ||--o{ Message : "holds"
+    User ||--o{ Message : "sends"
+    Ride ||--o{ Payment : "settled by"
+    User ||--o{ Payment : "pays / is paid"
+
+    User {
+        uuid id PK
+        string clerkId UK
+        string name
+        string email UK
+        enum status
+        string upiId
+    }
+    Session {
+        uuid id PK
+        uuid userId FK
+        string tokenHash
+        datetime expiresAt
+        datetime revokedAt
+    }
+    Ride {
+        uuid id PK
+        uuid rideCreatorId FK
+        geography source
+        geography destination
+        datetime time
+        boolean joinable
+    }
+    JoinRequest {
+        uuid id PK
+        uuid rideId FK
+        uuid userId FK
+        enum status
+        geography pickup
+        geography destination
+    }
+    Payment {
+        uuid id PK
+        uuid fromId FK
+        uuid toId FK
+        decimal amount
+        enum status
+    }
+```
+
+Points are PostGIS `geography(Point, 4326)`, written `[lon, lat]`. The full schema, with every field, the join request and session states, and the migrations, is in [docs/schema/schema.md](docs/schema/schema.md).
 
 ## Project layout
 
 ```
 client/   Expo app: screens in src/app (Stack + Tabs), components, hooks, services
 server/   Express API: src/{config,controllers,middleware,routes,services}, prisma/ schema and migrations
-docs/     Design spec and plans
+docs/     Design spec, plans, and the database schema (docs/schema)
 ```
 
 ## Running it locally
@@ -68,7 +209,7 @@ You need Node.js 22+, a PostgreSQL database with PostGIS (a free Neon project wo
 
 ```bash
 cd server
-cp .env.example .env      # fill in DATABASE_URL, CLERK_SECRET_KEY, CLERK_PUBLISHABLE_KEY
+cp .env.example .env      # fill in DATABASE_URL, JWT_SECRET, CLERK_SECRET_KEY, CLERK_JWT_KEY
 npm install
 npm run migrate           # applies the Prisma migrations
 npm run dev               # http://localhost:4000
@@ -78,11 +219,13 @@ npm run dev               # http://localhost:4000
 
 ```bash
 cd client
-cp .env.example .env      # fill in EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY and EXPO_PUBLIC_API_URL
+cp .env.example .env      # fill in EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY
 npm install
 npm run android           # or: npm run ios
 ```
 
-On a phone, `EXPO_PUBLIC_API_URL` must be your computer's address on the local network, for example `http://192.168.1.20:4000`, not `localhost`.
+While developing, leave `EXPO_PUBLIC_API_URL` empty: the app calls the computer running Metro on port 4000. Set it only for a deployed server.
+
+The server won't start without `DATABASE_URL`, `JWT_SECRET` and `CLERK_SECRET_KEY`. `CLERK_JWT_KEY` (from the Clerk dashboard) lets the server check Clerk tokens without a network call.
 
 The app uses native modules, so it runs as a development build (`npm run android` / `npm run ios`). It doesn't run in Expo Go.
