@@ -74,7 +74,7 @@ flowchart TB
     subgraph Phone["Android app: Expo / React Native"]
         Screens[Screens<br/>Stack + Tabs]
         Auth[AuthContext<br/>tokens + refresh]
-        Store[(SecureStore: tokens<br/>AsyncStorage: theme, recents)]
+        Store[(AsyncStorage: access token,<br/>theme, recents<br/>Cookie store: refresh token)]
     end
 
     subgraph Ext["Outside services (free tiers)"]
@@ -231,7 +231,7 @@ sequenceDiagram
     App->>API: POST /api/auth/login { clerkToken }
     API->>API: verify with CLERK_JWT_KEY (no network call)
     API->>DB: find or create User, create Session
-    API-->>App: accessToken (15 min) + refreshToken (30 days)
+    API-->>App: accessToken (15 min) in the body<br/>refreshToken (30 days) as an httpOnly cookie
     App->>Clerk: sign out of Clerk
 
     App->>API: requests with Bearer accessToken
@@ -256,7 +256,8 @@ flowchart LR
 
 - **Access token:** JWT with `sub` = user id and `sid` = session id. `requireUser` checks the signature, then checks that the session isn't revoked and the user isn't suspended. That database read is what makes logout and suspension instant.
 - **Refresh token:** `"<sessionId>.<secret>"`. Only a SHA-256 hash of the secret is stored. Each refresh swaps in a new secret; if an old one shows up again, someone copied it, so the session is revoked.
-- **App side:** tokens live in SecureStore. On a 401 the app refreshes **once** (parallel requests share the same refresh), then retries. Two refreshes at once would look like token reuse and end the session.
+- **Where the tokens live:** the access token is kept in AsyncStorage and sent as `Authorization: Bearer <token>` on every request. The refresh token is never seen by app code: the server sets it as an `httpOnly` cookie (`Path=/api/auth`, `SameSite=Strict`, `Secure` in production, 30 days), and the phone's cookie store sends it back to `/api/auth/refresh` and `/api/auth/logout` by itself. Logout clears it.
+- **App side:** on a 401 the app refreshes **once** (parallel requests share the same refresh), then retries. Two refreshes at once would look like token reuse and end the session.
 - **One flow for everyone:** the app tries Clerk sign-in, and if the email is unknown it creates the account instead. After that it asks only for a first name; the UPI ID is asked for only when someone becomes the booker.
 
 | Route | Does |

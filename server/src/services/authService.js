@@ -18,7 +18,7 @@ const issueTokens = async (userId, sessionId) => {
     : await prisma.session.create({ data: { ...data, userId } });
 
   const accessToken = jwt.sign({ sub: userId, sid: session.id }, process.env.JWT_SECRET, { expiresIn: '15m' });
-  return { accessToken, refreshToken: `${session.id}.${secret}` };
+  return { accessToken, refreshToken: `${session.id}.${secret}`, expiresAt: session.expiresAt };
 };
 
 const findSession = async (refreshToken) => {

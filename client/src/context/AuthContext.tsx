@@ -1,8 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import * as SecureStore from 'expo-secure-store';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiFetch, ApiError } from '@/services/api';
 
-type Tokens = { accessToken: string; refreshToken: string };
 type RequestOptions = { method?: string; body?: unknown };
 
 type AuthContextValue = {
@@ -13,42 +12,40 @@ type AuthContextValue = {
   request: <T>(path: string, options?: RequestOptions) => Promise<T>;
 };
 
-const KEY = 'hopshare.tokens';
+// Only the access token is kept here. The refresh token is an httpOnly cookie the phone's
+// cookie store sends to /api/auth by itself, so the app never handles it.
+const KEY = 'hopshare.accessToken';
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoaded, setIsLoaded] = useState(false);
   const [isSignedIn, setIsSignedIn] = useState(false);
-  const tokens = useRef<Tokens | null>(null);
-  const refreshing = useRef<Promise<Tokens | null> | null>(null);
+  const accessToken = useRef<string | null>(null);
+  const refreshing = useRef<Promise<string | null> | null>(null);
 
   useEffect(() => {
-    SecureStore.getItemAsync(KEY)
+    AsyncStorage.getItem(KEY)
       .then((saved) => {
-        tokens.current = saved ? JSON.parse(saved) : null;
-        setIsSignedIn(!!tokens.current);
+        accessToken.current = saved;
+        setIsSignedIn(!!saved);
       })
       .catch(() => {})
       .finally(() => setIsLoaded(true));
   }, []);
 
-  const save = useCallback(async (next: Tokens | null) => {
-    tokens.current = next;
+  const save = useCallback(async (next: string | null) => {
+    accessToken.current = next;
     setIsSignedIn(!!next);
-    if (next) await SecureStore.setItemAsync(KEY, JSON.stringify(next));
-    else await SecureStore.deleteItemAsync(KEY);
+    if (next) await AsyncStorage.setItem(KEY, next);
+    else await AsyncStorage.removeItem(KEY);
   }, []);
 
   // only one refresh at a time: the server ends the session if the same refresh token is used twice
   const refresh = useCallback(() => {
-    refreshing.current ??= apiFetch<Tokens>('/api/auth/refresh', {
-      token: null,
-      method: 'POST',
-      body: { refreshToken: tokens.current?.refreshToken },
-    })
-      .then(async (next) => {
-        await save(next);
-        return next;
+    refreshing.current ??= apiFetch<{ accessToken: string }>('/api/auth/refresh', { token: null, method: 'POST' })
+      .then(async (data) => {
+        await save(data.accessToken);
+        return data.accessToken;
       })
       .catch(async (e) => {
         if (e instanceof ApiError && e.status === 401) await save(null);
@@ -63,12 +60,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const request = useCallback(
     async <T,>(path: string, { method, body }: RequestOptions = {}) => {
       try {
-        return await apiFetch<T>(path, { token: tokens.current?.accessToken ?? null, method, body });
+        return await apiFetch<T>(path, { token: accessToken.current, method, body });
       } catch (e) {
         if (!(e instanceof ApiError) || e.status !== 401) throw e;
         const next = await refresh();
         if (!next) throw e;
-        return apiFetch<T>(path, { token: next.accessToken, method, body });
+        return apiFetch<T>(path, { token: next, method, body });
       }
     },
     [refresh],
@@ -76,16 +73,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = useCallback(
     async (clerkToken: string) => {
-      const data = await apiFetch<Tokens>('/api/auth/login', { token: null, method: 'POST', body: { clerkToken } });
-      await save({ accessToken: data.accessToken, refreshToken: data.refreshToken });
+      const data = await apiFetch<{ accessToken: string }>('/api/auth/login', {
+        token: null,
+        method: 'POST',
+        body: { clerkToken },
+      });
+      await save(data.accessToken);
     },
     [save],
   );
 
+  // log out first, so its "clear cookie" reply can't land after a new sign-in
   const signOut = useCallback(async () => {
-    const refreshToken = tokens.current?.refreshToken;
+    await apiFetch('/api/auth/logout', { token: null, method: 'POST' }).catch(() => {});
     await save(null);
-    apiFetch('/api/auth/logout', { token: null, method: 'POST', body: { refreshToken } }).catch(() => {});
   }, [save]);
 
   const value = useMemo(
