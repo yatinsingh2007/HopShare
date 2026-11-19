@@ -17,6 +17,7 @@ const IOS: Partial<Record<AndroidSymbol, SFSymbol>> = {
   close: 'xmark',
   bolt: 'bolt.fill',
   group: 'person.3.fill',
+  train: 'tram.fill',
 };
 
 export function Icon({ name, size = 20, color }: { name: AndroidSymbol; size?: number; color: ColorValue }) {
