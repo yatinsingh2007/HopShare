@@ -47,7 +47,7 @@ Launch market: **India** (designed for it).
 ## 3. Constraints
 
 - **Stack (from CLAUDE.md, updated):** Expo/React Native client (TypeScript, expo-router, existing scaffold in `client/`), Node/Express server (`server/`), PostgreSQL + PostGIS on **Neon**, Upstash Redis, Socket.io, OpenStreetMap/Nominatim.
-- **Auth:** **Clerk** (`@clerk/clerk-expo` on the client, Clerk token verification on Express and on the Socket.io handshake). This replaces the hand-rolled JWT described in CLAUDE.md; CLAUDE.md should be updated to match.
+- **Auth (updated 2026-11-19):** **Clerk verifies the email code only**; the server owns auth after that. `POST /api/auth/login` checks the Clerk token once, then issues our own access token (JWT, 15 min) and a refresh token (30 days, rotated on every use, stored hashed in `Session`). Express (`requireUser`) and the Socket.io handshake verify **our** access token, not Clerk's. Google sign-in is deferred to the end of v1. See section 6.1.
 - **ID verification:** **DigiLocker**, accessed through an aggregator (e.g. Setu, Surepass, Cashfree) because direct DigiLocker access requires a registered organisation. v1 may run on the aggregator's sandbox.
 - **Zero cost to run** where possible (free tiers, no per-transaction fees).
 - **No secrets in code** — everything via `.env`.
@@ -65,11 +65,11 @@ Mockups from the design session live in `.superpowers/brainstorm/` (git-ignored,
   - **Effort:** "You book the cab. We do the math."
 - Buttons: **Get started** (sign up) and **I have an account** (log in).
 
-### 4.2 Sign up / log in (Clerk)
-- Primary: phone number + OTP. Secondary: Google or email.
-- Privacy promise stated before the number is asked for: "Your number is never shown to other riders."
-- After sign-up: first name, and optionally a profile photo.
-- Check before building: Clerk's SMS support/pricing for Indian (+91) numbers. If blocked, make Google sign-in primary and verify the phone later.
+### 4.2 Sign up / log in (Clerk email code)
+- **Email + 6-digit code** is the only sign-in in v1 (updated 2026-11-19). Phone OTP was dropped (Clerk SMS for +91 isn't free); Google sign-in is deferred to the end of v1.
+- One flow for everyone: try sign-in, and if Clerk says the email is unknown, create the account instead.
+- After sign-up: first name only ("What should riders call you?"). UPI ID is asked for only when someone becomes the booker.
+- Returning users: email → code → Home.
 
 ### 4.3 Home — "Where to?"
 - Map at the top; pickup defaults to current GPS location (editable).
@@ -104,7 +104,7 @@ Mockups from the design session live in `.superpowers/brainstorm/` (git-ignored,
 5. **Verified** confirmation → back to the group.
 
 Badges: **✓ ID verified** (required to ride) and **✓ Photo verified** (optional).
-Verification status is stored on the user (server-side DB, mirrored to Clerk `publicMetadata`). The server — not the client — enforces "verified to join/create".
+Verification status is stored on the user in our database (Clerk is not involved after login). The server — not the client — enforces "verified to join/create".
 
 ### 4.8 Group screen (before pickup)
 - Meeting point, cab ETA once booked, who's booking.
@@ -180,10 +180,103 @@ Booker must have a UPI ID on their profile to be the booker *(Claude's call)*.
 
 ## 6. Real-time and data (high level)
 
-- **Socket.io** for: group membership changes, member live locations (pickup window only), ride status, payment status updates. Socket handshake authenticated with the Clerk session token.
+```mermaid
+flowchart LR
+    subgraph Phone["Android app (Expo)"]
+        UI[Screens]
+        SS[(SecureStore<br/>our tokens)]
+        AS[(AsyncStorage<br/>theme, recents)]
+    end
+
+    Clerk[Clerk<br/>email code only]
+    Photon[Photon / OSM<br/>place search]
+    Tiles[OpenFreeMap<br/>map tiles]
+    Cab[Uber / Ola / Rapido<br/>deep links]
+
+    subgraph Server["Express server (Render / Koyeb)"]
+        REST[REST API<br/>/api/auth, /api/me]
+        IO[Socket.io<br/>planned]
+        SVC[Services]
+    end
+
+    PG[(Postgres + PostGIS<br/>Neon)]
+    RD[(Upstash Redis<br/>live locations, pub/sub<br/>planned)]
+    DL[DigiLocker aggregator<br/>planned]
+
+    UI -- code --> Clerk
+    UI -- search --> Photon
+    UI -- tiles --> Tiles
+    UI -- book --> Cab
+    UI -- Bearer token --> REST
+    UI -. socket .-> IO
+    UI --- SS
+    UI --- AS
+    REST --> SVC
+    IO -.-> SVC
+    SVC -- verify once at login --> Clerk
+    SVC --> PG
+    SVC -.-> RD
+    SVC -.-> DL
+```
+
+Solid lines are built; dotted lines are planned.
+
+- **Socket.io** for: group membership changes, member live locations (pickup window only), ride status, payment status updates. Socket handshake authenticated with our own access token (same check as `requireUser`).
 - **Redis** for ephemeral live locations and pub/sub; nothing location-related is persisted beyond what's needed for an active ride and SOS review.
 - **Postgres/PostGIS** for users, verification status, groups (pickup/destination as geography points), memberships, rides, fares, payments, feedback, reports.
 - Matching uses `ST_DWithin` on pickup and destination geography columns.
+- The current tables are described in `docs/schema/schema.md`.
+
+### 6.1 Auth flow (updated 2026-11-19)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant App
+    participant Clerk
+    participant API as Server (Express)
+    participant DB as Postgres (Neon)
+
+    App->>API: GET /api/auth/warmup (sign-in screen opens)
+    API->>DB: wake Neon
+    App->>Clerk: email
+    Clerk-->>App: 6-digit code sent
+    App->>Clerk: code
+    Clerk-->>App: Clerk session token
+    App->>API: POST /api/auth/login { clerkToken }
+    API->>API: verify Clerk token once (CLERK_JWT_KEY)
+    API->>DB: find or create User
+    API->>DB: create Session (hash of refresh secret)
+    API-->>App: accessToken (15m) + refreshToken (30d) + user
+    App->>Clerk: sign out (Clerk is done)
+
+    Note over App,DB: Every later request
+    App->>API: Authorization: Bearer accessToken
+    API->>DB: session still active? user ACTIVE?
+    API-->>App: data
+
+    Note over App,DB: Access token expired (401)
+    App->>API: POST /api/auth/refresh { refreshToken }
+    API->>DB: rotate secret (old token dies)
+    API-->>App: new accessToken + refreshToken
+```
+
+```mermaid
+flowchart LR
+    R[Refresh token sent] --> S{Session found,<br/>not revoked,<br/>not expired?}
+    S -- no --> X[401: sign in again]
+    S -- yes --> H{Hash matches<br/>current secret?}
+    H -- yes --> N[Issue new pair,<br/>old secret dies]
+    H -- no --> V[Old token reused:<br/>revoke whole session] --> X
+```
+
+- **Access token:** JWT signed with `JWT_SECRET`, `sub` = user id, `sid` = session id, 15 minutes.
+- **Refresh token:** `"<sessionId>.<secret>"`; only the SHA-256 of the secret is stored. Each refresh issues a new one. Reusing an old one revokes the whole session (theft signal).
+- **Logout:** `POST /api/auth/logout` revokes this device's session; `POST /api/auth/logout-all` revokes every session of the user. Because `requireUser` checks the session is still active, logout takes effect immediately.
+- **Suspended users** (`User.status = SUSPENDED`) are refused by `requireUser`.
+- `GET /api/auth/warmup` is called when the sign-in screen opens, so the Neon database is awake by the time the code is entered.
+- App side: tokens live in SecureStore (`hopshare.tokens`); requests refresh one at a time on a 401.
+- Server refuses to start without `DATABASE_URL`, `JWT_SECRET`, `CLERK_SECRET_KEY`.
 
 ## 7. Left to the builder
 
