@@ -1,4 +1,5 @@
 const express = require('express');
+const cookieParser = require('cookie-parser');
 const { requireUser } = require('./middleware/requireUser');
 const { errorHandler, notFound } = require('./middleware/errorHandler');
 const authRoute = require('./routes/authRoute');
@@ -7,6 +8,7 @@ const meRoute = require('./routes/meRoute');
 const app = express();
 
 app.use(express.json());
+app.use(cookieParser());
 
 app.get('/', (req, res) => res.json({ success: true, message: 'Server is running' }));
 

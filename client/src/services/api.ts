@@ -25,6 +25,8 @@ export async function apiFetch<T>(path: string, { token, method = 'GET', body }:
   try {
     res = await fetch(`${API_URL}${path}`, {
       method,
+      // lets the phone's cookie store send and save the refresh-token cookie
+      credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
