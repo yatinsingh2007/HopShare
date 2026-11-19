@@ -255,7 +255,7 @@ flowchart LR
 ```
 
 - **Access token:** JWT with `sub` = user id and `sid` = session id. `requireUser` checks the signature, then checks that the session isn't revoked and the user isn't suspended. That database read is what makes logout and suspension instant.
-- **Refresh token:** `"<sessionId>.<secret>"`. Only a SHA-256 hash of the secret is stored. Each refresh swaps in a new secret; if an old one shows up again, someone copied it, so the session is revoked.
+- **Refresh token:** `"<sessionId>.<secret>"`. Only a bcrypt hash of the secret is stored (10 rounds, salted), so a leaked database can't be turned into working tokens. Each refresh swaps in a new secret; if an old one shows up again, someone copied it, so the session is revoked.
 - **App side:** tokens live in SecureStore. On a 401 the app refreshes **once** (parallel requests share the same refresh), then retries. Two refreshes at once would look like token reuse and end the session.
 - **One flow for everyone:** the app tries Clerk sign-in, and if the email is unknown it creates the account instead. After that it asks only for a first name; the UPI ID is asked for only when someone becomes the booker.
 
@@ -462,7 +462,7 @@ erDiagram
     Session {
         uuid id PK "also the first half of the refresh token"
         uuid userId FK
-        string tokenHash "SHA-256 of the refresh secret"
+        string tokenHash "bcrypt hash of the refresh secret"
         datetime expiresAt "30 days, reset on each refresh"
         datetime revokedAt "set on logout or token reuse"
         datetime createdAt

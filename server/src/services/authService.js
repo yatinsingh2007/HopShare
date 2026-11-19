@@ -1,17 +1,17 @@
 const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { clerkClient, verifyToken } = require('@clerk/express');
 const prisma = require('../config/db');
 const { findOrCreateUser } = require('./userService');
 
 const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
+const BCRYPT_ROUNDS = 10;
 
-const hash = (secret) => crypto.createHash('sha256').update(secret).digest('hex');
-
-// refresh token = "<sessionId>.<secret>", we only store the hash of the secret
+// refresh token = "<sessionId>.<secret>", we only store the bcrypt hash of the secret
 const issueTokens = async (userId, sessionId) => {
   const secret = crypto.randomBytes(32).toString('base64url');
-  const data = { tokenHash: hash(secret), expiresAt: new Date(Date.now() + THIRTY_DAYS) };
+  const data = { tokenHash: await bcrypt.hash(secret, BCRYPT_ROUNDS), expiresAt: new Date(Date.now() + THIRTY_DAYS) };
 
   const session = sessionId
     ? await prisma.session.update({ where: { id: sessionId }, data })
@@ -28,7 +28,7 @@ const findSession = async (refreshToken) => {
   const session = await prisma.session.findUnique({ where: { id: sessionId } });
   if (!session || session.revokedAt || session.expiresAt < new Date()) return null;
 
-  if (hash(secret) !== session.tokenHash) {
+  if (!(await bcrypt.compare(secret, session.tokenHash))) {
     // an old refresh token was reused, so someone may have stolen it
     await prisma.session.update({ where: { id: sessionId }, data: { revokedAt: new Date() } });
     return null;
