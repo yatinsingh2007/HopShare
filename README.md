@@ -136,6 +136,27 @@ sequenceDiagram
 | `POST /api/auth/logout-all` | Signs out every device |
 | `GET` / `PATCH /api/me` | Reads / updates your profile (first name) |
 
+### Why Redis (planned)
+
+Postgres holds everything that must last: users, rides, join requests, payments. Live location while a group meets up is different, and that's what Redis (Upstash) is for:
+
+- **It changes every few seconds and is useless a minute later.** Each member's phone sends its position every few seconds during the pickup window. Writing that into Postgres would mean constant writes to rows nobody reads again, and Neon (serverless) would never get to sleep.
+- **It should disappear on its own.** The spec promises location isn't kept beyond the active ride. In Redis each position is stored with a TTL, so it expires by itself, and nothing has to clean up Postgres.
+- **Messages have to reach every server.** With more than one server instance, two members of the same group can be connected to different instances. Redis pub/sub (the Socket.io Redis adapter) passes each update to all instances, so everyone in the group gets it.
+
+```mermaid
+flowchart LR
+    A[Rider A's phone] -- location every few s --> S1[Server instance 1]
+    B[Rider B's phone] --- S2[Server instance 2]
+    S1 -- SET with TTL --> R[(Redis)]
+    S1 -- publish group:ride-id --> R
+    R -- deliver to subscribers --> S2
+    S2 -- socket emit --> B
+    S1 -. ride state, payments .-> PG[(Postgres)]
+```
+
+Rule of thumb: if losing it on a restart doesn't matter and it expires within minutes, it goes in Redis. Everything else goes in Postgres.
+
 ### Database
 
 ```mermaid
