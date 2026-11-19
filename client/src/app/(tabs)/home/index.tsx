@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   BackHandler,
@@ -28,6 +28,7 @@ import { useTheme } from '@/context/ThemeContext';
 import { useMe } from '@/hooks/useMe';
 import {
   getRecentDestinations,
+  nearbyStations,
   nameForPoint,
   saveRecentDestination,
   searchPlaces,
@@ -172,6 +173,9 @@ export default function Home() {
   const [results, setResults] = useState<PlaceResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [stations, setStations] = useState<PlaceResult[]>([]);
+  const [findingStations, setFindingStations] = useState(false);
+  const stationsFor = useRef<string | null>(null);
 
   const mapHeight = Math.round(height * 0.42);
   const collapsedY = mapHeight - SHEET_OVERLAP;
@@ -223,6 +227,24 @@ export default function Home() {
     // Bias by where the rider is, but don't search again just because the street name arrived.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, active, pickup?.latitude, pickup?.longitude]);
+
+  // Suggest the closest stations as soon as the destination search opens; look again only when the pickup moves ~100 m.
+  useEffect(() => {
+    if (active !== 'destination' || !pickup) return;
+    const key = `${pickup.latitude.toFixed(3)},${pickup.longitude.toFixed(3)}`;
+    if (stationsFor.current === key) return;
+    const ctrl = new AbortController();
+    setFindingStations(true);
+    nearbyStations(pickup, ctrl.signal)
+      .then((found) => {
+        stationsFor.current = key;
+        setStations(found);
+      })
+      .catch(() => {})
+      .finally(() => !ctrl.signal.aborted && setFindingStations(false));
+    return () => ctrl.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, pickup?.latitude, pickup?.longitude]);
 
   const choose = (place: PlaceResult) => {
     if (active === 'pickup') setPickup(place);
@@ -330,7 +352,28 @@ export default function Home() {
         </Animated.View>
       );
     }
-    return recent.map((p, i) => <PlaceRow key={p.id} index={i} icon="history" place={p} onPress={() => choose(p)} />);
+    return (
+      <>
+        {recent.length ? (
+          <>
+            <Text style={[type.label, styles.listLabel, { color: colors.muted }]}>Recent</Text>
+            {recent.map((p, i) => (
+              <PlaceRow key={p.id} index={i} icon="history" place={p} onPress={() => choose(p)} />
+            ))}
+          </>
+        ) : null}
+        {stations.length || findingStations ? (
+          <Text style={[type.label, styles.listLabel, { color: colors.muted }]}>Stations near you</Text>
+        ) : null}
+        {findingStations && !stations.length ? (
+          <ActivityIndicator style={styles.note} size="small" color={colors.muted} />
+        ) : (
+          stations.map((p, i) => (
+            <PlaceRow key={p.id} index={recent.length + i} icon="train" place={p} onPress={() => choose(p)} />
+          ))
+        )}
+      </>
+    );
   };
 
   return (
@@ -501,5 +544,6 @@ const styles = StyleSheet.create({
   placeRow: { flexDirection: 'row', alignItems: 'center', gap: 14, minHeight: 60, paddingHorizontal: 8, borderRadius: 14 },
   placeIcon: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   note: { paddingHorizontal: 8, paddingVertical: 12 },
+  listLabel: { paddingHorizontal: 8, paddingTop: 12, paddingBottom: 4 },
   footer: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 20, paddingTop: 12, paddingBottom: 16, borderTopWidth: 1 },
 });
