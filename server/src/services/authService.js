@@ -1,39 +1,22 @@
-const crypto = require('crypto');
-const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { clerkClient, verifyToken } = require('@clerk/express');
 const prisma = require('../config/db');
 const { findOrCreateUser } = require('./userService');
 
-const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
-const BCRYPT_ROUNDS = 10;
-
-// refresh token = "<sessionId>.<secret>", we only store the bcrypt hash of the secret
-const issueTokens = async (userId, sessionId) => {
-  const secret = crypto.randomBytes(32).toString('base64url');
-  const data = { tokenHash: await bcrypt.hash(secret, BCRYPT_ROUNDS), expiresAt: new Date(Date.now() + THIRTY_DAYS) };
-
-  const session = sessionId
-    ? await prisma.session.update({ where: { id: sessionId }, data })
-    : await prisma.session.create({ data: { ...data, userId } });
-
-  const accessToken = jwt.sign({ sub: userId, sid: session.id }, process.env.JWT_SECRET, { expiresIn: '15m' });
-  return { accessToken, refreshToken: `${session.id}.${secret}`, expiresAt: session.expiresAt };
+// Both tokens are signed JWTs; nothing is stored. `type` stops a refresh token being used as an access token.
+const issueTokens = (userId) => {
+  const accessToken = jwt.sign({ sub: userId, type: 'access' }, process.env.JWT_SECRET, { expiresIn: '15m' });
+  const refreshToken = jwt.sign({ sub: userId, type: 'refresh' }, process.env.JWT_SECRET, { expiresIn: '30d' });
+  return { accessToken, refreshToken, expiresAt: new Date(jwt.decode(refreshToken).exp * 1000) };
 };
 
-const findSession = async (refreshToken) => {
-  const [sessionId, secret] = String(refreshToken ?? '').split('.');
-  if (!sessionId || !secret) return null;
-
-  const session = await prisma.session.findUnique({ where: { id: sessionId } });
-  if (!session || session.revokedAt || session.expiresAt < new Date()) return null;
-
-  if (!(await bcrypt.compare(secret, session.tokenHash))) {
-    // an old refresh token was reused, so someone may have stolen it
-    await prisma.session.update({ where: { id: sessionId }, data: { revokedAt: new Date() } });
+const verify = (token, type) => {
+  try {
+    const claims = jwt.verify(token, process.env.JWT_SECRET);
+    return claims.type === type ? claims : null;
+  } catch {
     return null;
   }
-  return session;
 };
 
 // Clerk only tells us the email code was valid. After that we use our own tokens.
@@ -46,37 +29,24 @@ const login = async (clerkToken) => {
   }
 
   const user = await findOrCreateUser(clerkId, () => clerkClient.users.getUser(clerkId));
-  return { user, ...(await issueTokens(user.id)) };
+  return { user, ...issueTokens(user.id) };
 };
 
+// a new pair each time; suspended users get nothing
 const refresh = async (refreshToken) => {
-  const session = await findSession(refreshToken);
-  return session ? issueTokens(session.userId, session.id) : null;
+  const claims = verify(refreshToken, 'refresh');
+  if (!claims) return null;
+  const user = await prisma.user.findUnique({ where: { id: claims.sub } });
+  return user?.status === 'ACTIVE' ? issueTokens(user.id) : null;
 };
 
-const logout = async (refreshToken) => {
-  const session = await findSession(refreshToken);
-  if (session) await prisma.session.update({ where: { id: session.id }, data: { revokedAt: new Date() } });
-};
-
-const logoutAll = (userId) =>
-  prisma.session.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: new Date() } });
-
-// used by requireUser on every request, so a logout takes effect straight away
+// used by requireUser on every request
 const getUserFromAccessToken = async (accessToken) => {
-  let claims;
-  try {
-    claims = jwt.verify(accessToken, process.env.JWT_SECRET);
-  } catch {
-    return null;
-  }
-
-  const session = await prisma.session.findUnique({ where: { id: claims.sid }, include: { user: true } });
-  if (!session || session.revokedAt || session.expiresAt < new Date()) return null;
-  return session.user;
+  const claims = verify(accessToken, 'access');
+  return claims ? prisma.user.findUnique({ where: { id: claims.sub } }) : null;
 };
 
 // Neon sleeps when idle; the app calls this as sign-in opens so the database is awake by login
 const warmUp = () => prisma.$queryRaw`SELECT 1`;
 
-module.exports = { warmUp, login, refresh, logout, logoutAll, getUserFromAccessToken };
+module.exports = { warmUp, login, refresh, getUserFromAccessToken };

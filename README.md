@@ -8,7 +8,7 @@
 
 ---
 
-**Contents:** [What it is](#what-it-is) · [Status](#status) · [Tech stack](#tech-stack) · [System design](#system-design) · [1. Big picture](#1-big-picture) · [2. One ride end to end](#2-one-ride-end-to-end) · [3. App screens](#3-app-screens) · [4. Sign-in](#4-sign-in-and-sessions) · [5. Places](#5-places-and-maps) · [6. Matching](#6-matching) · [7. Joining](#7-joining-a-group) · [8. Real time and Redis](#8-real-time-socketio-and-redis) · [9. Booking](#9-booking-the-cab) · [10. Safety](#10-safety) · [11. Fare split](#11-fare-split-and-payback) · [12. Database](#12-database) · [13. Deployment](#13-deployment-cost-and-scale) · [14. Trade-offs](#14-trade-offs) · [Project layout](#project-layout) · [Running it locally](#running-it-locally)
+**Contents:** [What it is](#what-it-is) · [Status](#status) · [Tech stack](#tech-stack) · [System design](#system-design) · [1. Big picture](#1-big-picture) · [2. One ride end to end](#2-one-ride-end-to-end) · [3. App screens](#3-app-screens) · [4. Sign-in](#4-sign-in-and-tokens) · [5. Places](#5-places-and-maps) · [6. Matching](#6-matching) · [7. Joining](#7-joining-a-group) · [8. Real time and Redis](#8-real-time-socketio-and-redis) · [9. Booking](#9-booking-the-cab) · [10. Safety](#10-safety) · [11. Fare split](#11-fare-split-and-payback) · [12. Database](#12-database) · [13. Deployment](#13-deployment-cost-and-scale) · [14. Trade-offs](#14-trade-offs) · [Project layout](#project-layout) · [Running it locally](#running-it-locally)
 
 ## What it is
 
@@ -41,7 +41,7 @@ Each part of the design below is marked **Built**, **Planned** (decided, not cod
 | Area | State |
 |---|---|
 | Sign-in with an email code (Clerk checks the code) | Done |
-| Own auth on the server: access + refresh tokens, sessions per device | Done |
+| Own auth on the server: JWT access + refresh tokens | Done |
 | Database schema and migrations (Prisma, PostGIS) | Done |
 | Home screen: map, place search, live pickup location | Done |
 | One-tap Uber / Ola booking with the route filled in | Done (not yet on a screen) |
@@ -118,7 +118,7 @@ Solid lines are built; dotted lines are planned.
 | Expo app | All screens, GPS, maps, opening cab and UPI apps | Built: sign-in, profile setup, home map + search |
 | Express API | Auth, profile, rides, matching, join requests, fares | Built: auth + `/api/me` |
 | Socket.io | Group updates and live location in real time | Planned |
-| Postgres + PostGIS (Neon) | Users, sessions, rides, join requests, payments; 1 km geo queries | Built (schema) |
+| Postgres + PostGIS (Neon) | Users, rides, join requests, payments; 1 km geo queries | Built (schema) |
 | Redis (Upstash) | Short-lived live locations, pub/sub between server instances | Planned |
 | Clerk | Checks the email code. Nothing else | Built |
 | Photon / OpenFreeMap | Place search, reverse geocoding, map tiles | Built (called from the app) |
@@ -213,9 +213,9 @@ flowchart TD
 
 Navigation is kept simple: a root `Stack`, a `Tabs` bar (Home, Profile), and a `Stack` inside each tab. Built so far: Welcome, Sign in, Profile setup, Home.
 
-## 4. Sign-in and sessions
+## 4. Sign-in and tokens
 
-**Built.** Clerk is used for one thing: proving the person owns the email. After that HopShare runs its own auth, so the server controls sessions, logout and suspension.
+**Built.** Clerk is used for one thing: proving the person owns the email. After that HopShare runs its own auth with two signed JWTs. Nothing about a sign-in is stored in the database.
 
 ```mermaid
 sequenceDiagram
@@ -230,34 +230,38 @@ sequenceDiagram
     Clerk-->>App: Clerk token
     App->>API: POST /api/auth/login { clerkToken }
     API->>API: verify with CLERK_JWT_KEY (no network call)
-    API->>DB: find or create User, create Session
+    API->>DB: find or create User
     API-->>App: accessToken (15 min) in the body<br/>refreshToken (30 days) as an httpOnly cookie
     App->>Clerk: sign out of Clerk
 
     App->>API: requests with Bearer accessToken
-    API->>DB: session active? user not suspended?
+    API->>API: check signature + type = access
+    API->>DB: load User, refuse if suspended
     API-->>App: data
 
-    App->>API: POST /api/auth/refresh (after a 401)
-    API->>DB: replace the refresh secret
-    API-->>App: new token pair
+    App->>API: POST /api/auth/refresh (after a 401, cookie sent)
+    API->>API: check signature + type = refresh
+    API->>DB: user still ACTIVE?
+    API-->>App: new accessToken + new refresh cookie
 ```
 
 How a refresh token is checked:
 
 ```mermaid
 flowchart LR
-    R[Refresh token sent] --> S{Session found,<br/>not revoked,<br/>not expired?}
-    S -- no --> X[401: sign in again]
-    S -- yes --> H{Hash matches<br/>current secret?}
-    H -- yes --> N[Issue new pair,<br/>old secret dies]
-    H -- no --> V[Old token reused:<br/>revoke the session] --> X
+    R[Refresh cookie sent] --> S{Signed by us,<br/>not expired,<br/>type = refresh?}
+    S -- no --> X[401 + clear cookie:<br/>sign in again]
+    S -- yes --> U{User exists<br/>and ACTIVE?}
+    U -- no --> X
+    U -- yes --> N[New access token +<br/>new 30-day refresh cookie]
 ```
 
-- **Access token:** JWT with `sub` = user id and `sid` = session id. `requireUser` checks the signature, then checks that the session isn't revoked and the user isn't suspended. That database read is what makes logout and suspension instant.
-- **Refresh token:** `"<sessionId>.<secret>"`. Only a bcrypt hash of the secret is stored (10 rounds, salted), so a leaked database can't be turned into working tokens. Each refresh swaps in a new secret; if an old one shows up again, someone copied it, so the session is revoked.
-- **Where the tokens live:** the access token is kept in AsyncStorage and sent as `Authorization: Bearer <token>` on every request. The refresh token is never seen by app code: the server sets it as an `httpOnly` cookie (`Path=/api/auth`, `SameSite=Strict`, `Secure` in production, 30 days), and the phone's cookie store sends it back to `/api/auth/refresh` and `/api/auth/logout` by itself. Logout clears it.
-- **App side:** on a 401 the app refreshes **once** (parallel requests share the same refresh), then retries. Two refreshes at once would look like token reuse and end the session.
+- **Access token:** JWT `{ sub: userId, type: "access" }`, 15 minutes, signed with `JWT_SECRET`. `requireUser` checks the signature, then loads the user and refuses suspended accounts.
+- **Refresh token:** JWT `{ sub: userId, type: "refresh" }`, 30 days, same secret. The `type` claim stops one kind of token being used as the other. Each refresh gives a new one, so an active user's 30 days keep moving forward.
+- **Where the tokens live:** the access token is kept in AsyncStorage and sent as `Authorization: Bearer <token>` on every request. The refresh token is never seen by app code: the server sets it as an `httpOnly` cookie (`Path=/api/auth`, `SameSite=Strict`, `Secure` in production, expiring with the token), and the phone's cookie store sends it back to `/api/auth/refresh` and `/api/auth/logout` by itself.
+- **Logout:** clears the cookie, and the app forgets its access token. Because nothing is stored, the server can't cancel a token that was copied off the phone: it stays valid until it expires. Suspension still works, because every request and refresh checks the user's status.
+- **Many devices:** each sign-in gets its own tokens, so several phones can be signed in at once. Listing or signing out other devices needs stored sessions, which are left for later.
+- **App side:** on a 401 the app refreshes **once** (parallel requests share the same refresh), then retries.
 - **One flow for everyone:** the app tries Clerk sign-in, and if the email is unknown it creates the account instead. After that it asks only for a first name; the UPI ID is asked for only when someone becomes the booker.
 
 | Route | Does |
@@ -265,8 +269,7 @@ flowchart LR
 | `GET /api/auth/warmup` | Wakes the database when the sign-in screen opens |
 | `POST /api/auth/login` | Swaps a Clerk token for our tokens |
 | `POST /api/auth/refresh` | Gives a new token pair |
-| `POST /api/auth/logout` | Signs out this device |
-| `POST /api/auth/logout-all` | Signs out every device |
+| `POST /api/auth/logout` | Clears the refresh cookie |
 | `GET` / `PATCH /api/me` | Reads / updates your profile (first name) |
 
 ## 5. Places and maps
@@ -436,7 +439,6 @@ Postgres + PostGIS on Neon, managed with Prisma (`server/prisma/schema.prisma`).
 
 ```mermaid
 erDiagram
-    User ||--o{ Session : "signs in on"
     User ||--o{ Ride : "creates"
     User }o--o{ Ride : "rides in (RideUsers)"
     User ||--o{ JoinRequest : "asks to join"
@@ -460,14 +462,6 @@ erDiagram
         string upiId "asked for only when booking"
     }
 
-    Session {
-        uuid id PK "also the first half of the refresh token"
-        uuid userId FK
-        string tokenHash "bcrypt hash of the refresh secret"
-        datetime expiresAt "30 days, reset on each refresh"
-        datetime revokedAt "set on logout or token reuse"
-        datetime createdAt
-    }
 
     Ride {
         uuid id PK
@@ -519,22 +513,8 @@ erDiagram
     }
 ```
 
-Session lifecycle (one row per signed-in device):
-
-```mermaid
-stateDiagram-v2
-    [*] --> Active: POST /api/auth/login
-    Active --> Active: POST /api/auth/refresh (new secret)
-    Active --> Revoked: logout / logout-all
-    Active --> Revoked: old refresh token reused
-    Active --> Expired: 30 days without a refresh
-    Revoked --> [*]
-    Expired --> [*]
-```
-
 | Parent deleted | Children deleted with it |
 |---|---|
-| `User` | `Session` |
 | `Ride` | `Chat`, `Payment`, `JoinRequest` |
 | `Chat` | `Message`, `Payment` |
 
@@ -546,6 +526,7 @@ stateDiagram-v2
 | `20261106090000_ride_place_names` | `Ride.sourceName`, `destinationName` |
 | `20261106120000_join_requests` | `JoinRequest` table and status enum |
 | `20261107090000_sessions` | `Session` table for our own auth |
+| `20261120090000_drop_sessions` | Dropped `Session`: refresh tokens are stateless JWTs for now |
 
 Not in the schema yet: GIST indexes on ride points, ID verification fields, feedback, trusted contacts, moderation cases. `Chat` and `Message` exist from the first draft, but in-app chat is out of scope for v1.
 
@@ -573,8 +554,8 @@ If it grew:
 |---|---|---|
 | Hand off to Uber/Ola instead of booking | No partner API access; no liability | Can't read trip status; booker taps "Cab booked" |
 | UPI links instead of a payment gateway | Free, no KYC, never hold others' money | Payment isn't guaranteed; booker confirms |
-| Clerk only for the email code, own tokens after | Control over sessions, logout, suspension; Clerk limits only touch login | We own token security (hashing, rotation, reuse check) |
-| Session check on every request | Logout and suspension are instant | One extra DB read per request |
+| Clerk only for the email code, own tokens after | Control over tokens and suspension; Clerk limits only touch login | We own token security |
+| Stateless JWT refresh tokens (no session table) | Nothing to store or clean up; many devices just work | Logout can't cancel a copied token; no device list or sign-out-everywhere |
 | Email code instead of phone OTP | Free (SMS to +91 numbers costs money) | Phone number isn't verified |
 | Redis for live location | Fast, auto-expiring, works across servers | One more service to run |
 | Even split only | Simple and easy to trust | Unfair if someone gets off much earlier |
