@@ -8,7 +8,7 @@
 
 ---
 
-**Contents:** [What it is](#what-it-is) · [Status](#status) · [Tech stack](#tech-stack) · [System design](#system-design) · [1. Big picture](#1-big-picture) · [2. One ride end to end](#2-one-ride-end-to-end) · [3. App screens](#3-app-screens) · [4. Sign-in](#4-sign-in-and-tokens) · [5. Places](#5-places-and-maps) · [6. Matching](#6-matching) · [7. Joining](#7-joining-a-group) · [8. Real time and Redis](#8-real-time-socketio-and-redis) · [9. Booking](#9-booking-the-cab) · [10. Safety](#10-safety) · [11. Fare split](#11-fare-split-and-payback) · [12. Database](#12-database) · [13. Deployment](#13-deployment-cost-and-scale) · [14. Trade-offs](#14-trade-offs) · [Project layout](#project-layout) · [Running it locally](#running-it-locally)
+**Contents:** [What it is](#what-it-is) · [Status](#status) · [Tech stack](#tech-stack) · [System design](#system-design) · [1. Big picture](#1-big-picture) · [2. One ride end to end](#2-one-ride-end-to-end) · [3. App screens](#3-app-screens) · [4. Sign-in](#4-sign-in-and-tokens) · [5. Places](#5-places-and-maps) · [6. Matching](#6-matching) · [7. Joining](#7-joining-a-group) · [8. Real time](#8-real-time-socketio-and-redis-later) · [9. Booking](#9-booking-the-cab) · [10. Safety](#10-safety) · [11. Fare split](#11-fare-split-and-payback) · [12. Database](#12-database) · [13. Deployment](#13-deployment-cost-and-scale) · [14. Trade-offs](#14-trade-offs) · [Project layout](#project-layout) · [Running it locally](#running-it-locally)
 
 ## What it is
 
@@ -47,7 +47,8 @@ Each part of the design below is marked **Built**, **Planned** (decided, not cod
 | One-tap Uber / Ola booking with the route filled in | Done (not yet on a screen) |
 | Matched groups screen, join requests, 1 km matching | Next |
 | Google sign-in | Later |
-| Live location, group updates (Socket.io, Redis) | Planned |
+| Live location, group updates (Socket.io) | Planned |
+| Redis | Later, only when we run more than one server |
 | DigiLocker verification, fare split and UPI payback | Planned |
 
 ## Tech stack
@@ -59,7 +60,7 @@ Each part of the design below is marked **Built**, **Planned** (decided, not cod
 | Database | PostgreSQL + PostGIS on Neon, Prisma |
 | Sign-in | Email + password (bcrypt, our DB); Clerk proves the email with a code; our own JWT access + refresh tokens |
 | Maps and places | MapLibre + OpenFreeMap tiles, Photon (OpenStreetMap) search |
-| Real-time (planned) | Socket.io, Upstash Redis |
+| Real-time (planned) | Socket.io, one server, live state in memory (Upstash Redis later, to scale) |
 | ID verification (planned) | DigiLocker through an aggregator |
 | Hosting (planned) | Render / Koyeb |
 
@@ -90,11 +91,11 @@ flowchart TB
         MW[requireUser<br/>checks our JWT]
         Routes[Routes]
         Services[Controllers<br/>auth, me, ride, match, fare]
-        Sock[Socket.io gateway<br/>planned]
+        Sock[Socket.io gateway<br/>live state in memory<br/>planned]
     end
 
     PG[(Neon Postgres + PostGIS<br/>lasting data)]
-    Redis[(Upstash Redis<br/>live locations, pub/sub<br/>planned)]
+    Redis[(Upstash Redis<br/>only when scaling<br/>later)]
 
     Screens --> Auth
     Auth --- Store
@@ -119,7 +120,7 @@ Solid lines are built; dotted lines are planned.
 | Express API | Auth, profile, rides, matching, join requests, fares | Built: auth + `/api/me` |
 | Socket.io | Group updates and live location in real time | Planned |
 | Postgres + PostGIS (Neon) | Users, rides, join requests, payments; 1 km geo queries | Built (schema) |
-| Redis (Upstash) | Short-lived live locations, pub/sub between server instances | Planned |
+| Redis (Upstash) | Shared live state and pub/sub once there is more than one server instance | Later (not needed with one server) |
 | Clerk | Proves an email (code) or Google account at sign-up and reset. Nothing else | Built |
 | Photon / OpenFreeMap | Place search, reverse geocoding, map tiles | Built (called from the app) |
 | DigiLocker aggregator | ID verification before joining a group | Planned |
@@ -136,7 +137,7 @@ sequenceDiagram
     participant App as HopShare app
     participant API as Server
     participant DB as Postgres
-    participant RS as Redis
+    participant RS as Server memory
 
     A->>App: log in (email + password)
     App->>API: POST /api/auth/login
@@ -161,8 +162,8 @@ sequenceDiagram
     A->>App: Cab booked
     Note over A,RS: Meet-up window: live location
     App->>API: socket: my location (every few s)
-    API->>RS: SET with TTL + publish to the group
-    RS-->>API: fan out
+    API->>RS: keep latest position (expires after 60 s)
+    API->>API: emit to the ride room
     API-->>App: members' locations on the map
     A->>App: Picked up (sharing stops)
     A->>App: We've arrived, fare ₹248
@@ -376,7 +377,7 @@ stateDiagram-v2
 - Accept runs in one transaction: check the ride is still joinable and has room, mark the request `ACCEPTED`, add the member, set `joinable = false` at 4.
 - **Proposed:** a rider may have several pending requests; the first accept wins and the others become `CANCELLED`.
 
-## 8. Real time: Socket.io and Redis
+## 8. Real time: Socket.io (and Redis later)
 
 **Planned.** The socket handshake sends the same access token as HTTP and goes through the same check as `requireUser`. Each member joins a room per ride, `ride:<rideId>`.
 
@@ -390,26 +391,44 @@ stateDiagram-v2
 | `location:update` | phone → server → room | every few seconds, meet-up window only |
 | `payment:updated` | server → room | someone paid / booker confirmed |
 
-### Why Redis
+### Live state: in memory now, Redis later
 
-Postgres holds everything that must last: users, rides, join requests, payments. Live location while a group meets up is different:
+We run **one server** for now. Postgres holds everything that must last: users, rides, join requests, payments. Live location while a group meets up is different: it changes every few seconds and is useless a minute later, so it never goes into Postgres (that would be constant writes nobody reads, and serverless Neon would never sleep).
 
-- **It changes every few seconds and is useless a minute later.** Writing it into Postgres would mean constant writes to rows nobody reads again, and serverless Neon would never get to sleep.
-- **It should disappear on its own.** Location isn't kept beyond the active ride. In Redis each position is stored with a TTL (e.g. `loc:<rideId>:<userId>`, 60 s), so it expires by itself.
-- **Updates have to reach every server.** With more than one server instance, two members of the same group can be connected to different ones. Redis pub/sub (the Socket.io Redis adapter) passes each update to all instances.
+With one server, that live state just lives in the server's memory:
+
+- **Socket.io rooms do the fan-out.** Every phone is connected to the same server, so `io.to('ride:<rideId>').emit(...)` reaches the whole group. No pub/sub needed.
+- **Latest positions sit in a `Map`** (`userId → { lng, lat, at }`), and entries older than 60 s are dropped. Seat holds and login attempt limits work the same way: a `Map` with an expiry time.
+- **A restart loses it, and that's fine.** Phones send a new position within seconds. Free hosting also sleeps when idle, which clears it the same way.
+- **All of it lives in one place in the code**, so moving it to Redis later touches only that place.
 
 ```mermaid
 flowchart LR
-    A[Rider A's phone] -- location every few s --> S1[Server instance 1]
+    A[Rider A's phone] -- location every few s --> S[Server]
+    S -- latest position, expires 60 s --> M[(Memory Map)]
+    S -- emit to ride room --> B[Rider B's phone]
+    S -- emit to ride room --> C[Rider C's phone]
+    S -. ride state, payments .-> PG[(Postgres)]
+```
+
+### When Redis comes in
+
+Only when we run **more than one server instance**. Then two members of one group can be connected to different instances, and memory on one instance can't be seen by the other. Redis (Upstash, free tier) fixes both:
+
+- **Pub/Sub:** "publish/subscribe". Each instance subscribes to a channel per ride; an update published by one instance is delivered by Redis to all the others, which pass it to their phones. The Socket.io Redis adapter (`@socket.io/redis-adapter`) does this, so ride code doesn't change.
+- **Shared, self-expiring keys:** positions stored as `loc:<rideId>:<userId>` with a 60 s TTL, visible to every instance.
+
+```mermaid
+flowchart LR
+    A[Rider A's phone] -- location --> S1[Server instance 1]
     B[Rider B's phone] --- S2[Server instance 2]
     S1 -- SET loc:ride:A EX 60 --> R[(Redis)]
     S1 -- publish ride room --> R
     R -- deliver to subscribers --> S2
     S2 -- socket emit --> B
-    S1 -. ride state, payments .-> PG[(Postgres)]
 ```
 
-Rule of thumb: if losing it on a restart doesn't matter and it expires within minutes, it goes in Redis. Everything else goes in Postgres.
+Rule of thumb: if losing it on a restart doesn't matter and it expires within minutes, it's live state (memory now, Redis when we scale). Everything else goes in Postgres.
 
 **When location is shared:** from "group full / cab booked" until "picked up", for everyone in the group. After that, only a rider who taps **Share trip** or **SOS** keeps streaming. On the phone, incoming locations update the map markers without re-rendering the whole screen, because they arrive several times a second across a group.
 
@@ -579,7 +598,7 @@ Not in the schema yet: GIST indexes on ride points, ID verification fields, feed
 | App | Android APK (Expo development build) | Free |
 | API + sockets | Render / Koyeb free tier | Free |
 | Postgres + PostGIS | Neon serverless | Free tier |
-| Redis | Upstash serverless | Free tier |
+| Redis (only when scaling) | Upstash serverless | Free tier |
 | Auth, maps, search | Clerk, OpenFreeMap, Photon | Free |
 
 Free tiers sleep when idle, so the server and Neon may need a few seconds to wake. The warmup call on the sign-in screen hides that wait.
@@ -587,7 +606,7 @@ Free tiers sleep when idle, so the server and Neon may need a few seconds to wak
 If it grew:
 
 1. Add GIST indexes on ride points, so matching stays fast.
-2. Run more than one server instance: possible because auth is stateless JWT and sockets share state through Redis.
+2. Run more than one server instance: auth is already stateless JWT; add Redis and the Socket.io Redis adapter so live state and room messages are shared.
 3. Run our own Photon, or cache searches behind `/api/places`.
 
 ## 14. Trade-offs
@@ -599,7 +618,7 @@ If it grew:
 | Own passwords and tokens; Clerk only proves the email | Login doesn't depend on Clerk; full control over accounts and suspension | We own password security: hashing, generic errors, and (still to add) attempt limits |
 | Stateless JWT refresh tokens (no session table) | Nothing to store or clean up; many devices just work | Logout can't cancel a copied token; no device list or sign-out-everywhere |
 | Email code instead of phone OTP | Free (SMS to +91 numbers costs money) | Phone number isn't verified |
-| Redis for live location | Fast, auto-expiring, works across servers | One more service to run |
+| Live state in server memory, Redis only later | Nothing extra to run while there's one server | Lost on restart; must move to Redis before running a second instance |
 | Even split only | Simple and easy to trust | Unfair if someone gets off much earlier |
 | PostGIS on both ends of the ride | One SQL query, real distances in metres | Needs `[lon, lat]` discipline and indexes later |
 
