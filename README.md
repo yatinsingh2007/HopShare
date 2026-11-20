@@ -40,7 +40,7 @@ Each part of the design below is marked **Built**, **Planned** (decided, not cod
 
 | Area | State |
 |---|---|
-| Sign-in with an email code (Clerk checks the code) | Done |
+| Sign-up and login with email + password (Clerk proves the email with a code) | Done |
 | Own auth on the server: JWT access + refresh tokens | Done |
 | Database schema and migrations (Prisma, PostGIS) | Done |
 | Home screen: map, place search, live pickup location | Done |
@@ -57,7 +57,7 @@ Each part of the design below is marked **Built**, **Planned** (decided, not cod
 | Mobile app | React Native (Expo), TypeScript, Expo Router |
 | API | Node.js, Express |
 | Database | PostgreSQL + PostGIS on Neon, Prisma |
-| Sign-in | Clerk email code, then our own JWT access + refresh tokens |
+| Sign-in | Email + password (bcrypt, our DB); Clerk proves the email with a code; our own JWT access + refresh tokens |
 | Maps and places | MapLibre + OpenFreeMap tiles, Photon (OpenStreetMap) search |
 | Real-time (planned) | Socket.io, Upstash Redis |
 | ID verification (planned) | DigiLocker through an aggregator |
@@ -78,7 +78,7 @@ flowchart TB
     end
 
     subgraph Ext["Outside services (free tiers)"]
-        Clerk[Clerk<br/>email code]
+        Clerk[Clerk<br/>email proof]
         Photon[Photon<br/>place search]
         Tiles[OpenFreeMap<br/>map tiles]
         CabApps[Uber / Ola apps<br/>deep links]
@@ -120,7 +120,7 @@ Solid lines are built; dotted lines are planned.
 | Socket.io | Group updates and live location in real time | Planned |
 | Postgres + PostGIS (Neon) | Users, rides, join requests, payments; 1 km geo queries | Built (schema) |
 | Redis (Upstash) | Short-lived live locations, pub/sub between server instances | Planned |
-| Clerk | Checks the email code. Nothing else | Built |
+| Clerk | Proves an email (code) or Google account at sign-up and reset. Nothing else | Built |
 | Photon / OpenFreeMap | Place search, reverse geocoding, map tiles | Built (called from the app) |
 | DigiLocker aggregator | ID verification before joining a group | Planned |
 
@@ -138,7 +138,7 @@ sequenceDiagram
     participant DB as Postgres
     participant RS as Redis
 
-    A->>App: sign in (email code)
+    A->>App: log in (email + password)
     App->>API: POST /api/auth/login
     A->>App: Where to? pickup, destination, leaving time
     App->>API: search groups near me
@@ -194,7 +194,7 @@ stateDiagram-v2
 flowchart TD
     Start([Open app]) --> Signed{Signed in?}
     Signed -- no --> Welcome[Welcome<br/>3 slides: cost, safety, effort]
-    Welcome --> SignIn[Sign in<br/>email → 6-digit code]
+    Welcome --> SignIn[Log in: email + password<br/>Sign up: email → code → password]
     SignIn --> Name{Have a first name?}
     Signed -- yes --> Name
     Name -- no --> Setup[Profile setup<br/>What should riders call you?]
@@ -215,7 +215,32 @@ Navigation is kept simple: a root `Stack`, a `Tabs` bar (Home, Profile), and a `
 
 ## 4. Sign-in and tokens
 
-**Built.** Clerk is used for one thing: proving the person owns the email. After that HopShare runs its own auth with two signed JWTs. Nothing about a sign-in is stored in the database.
+**Built.** Passwords are ours: the server stores a bcrypt hash and checks it at login. Clerk is used like a small service for one job: proving someone owns an email (a 6-digit code) or a Google account. After any way in, HopShare issues its own two signed JWTs. Nothing about a sign-in is stored in the database.
+
+Three ways in, one ending:
+
+```mermaid
+flowchart TD
+    subgraph Signup["Sign up / Forgot password"]
+        E1[Email] --> C1[Clerk emails a code] --> V1[Code entered,<br/>Clerk confirms it]
+        V1 --> P1[Choose a password]
+        P1 --> SP["POST /api/auth/set-password<br/>{ clerkToken, password }"]
+    end
+    subgraph Login["Log in"]
+        E2[Email + password] --> L["POST /api/auth/login<br/>{ email, password }"]
+    end
+    subgraph Google["Google"]
+        G[Google account,<br/>via Clerk] --> CL["POST /api/auth/clerk<br/>{ clerkToken }"]
+    end
+    SP --> H[Server: check Clerk token,<br/>find or create User,<br/>save bcrypt hash]
+    L --> B[Server: find User by email,<br/>bcrypt.compare]
+    CL --> F[Server: check Clerk token,<br/>find or create User]
+    H --> T[Access token in the body<br/>+ refresh token cookie]
+    B --> T
+    F --> T
+```
+
+The same flow over time, from sign-up to a refresh:
 
 ```mermaid
 sequenceDiagram
@@ -227,12 +252,18 @@ sequenceDiagram
 
     App->>API: GET /api/auth/warmup (wake Neon while the user types)
     App->>Clerk: email, then 6-digit code
-    Clerk-->>App: Clerk token
-    App->>API: POST /api/auth/login { clerkToken }
-    API->>API: verify with CLERK_JWT_KEY (no network call)
-    API->>DB: find or create User
+    Clerk-->>App: Clerk token (email proved)
+    App->>API: POST /api/auth/set-password { clerkToken, password }
+    API->>API: verify Clerk token with CLERK_JWT_KEY (no network call)
+    API->>DB: find or create User, save bcrypt(password)
     API-->>App: accessToken (15 min) in the body<br/>refreshToken (30 days) as an httpOnly cookie
     App->>Clerk: sign out of Clerk
+
+    Note over App,DB: Later logins don't touch Clerk
+    App->>API: POST /api/auth/login { email, password }
+    API->>DB: User by email
+    API->>API: bcrypt.compare(password, passwordHash)
+    API-->>App: accessToken + refresh cookie
 
     App->>API: requests with Bearer accessToken
     API->>API: check signature + type = access
@@ -262,12 +293,19 @@ flowchart LR
 - **Logout:** clears the cookie, and the app forgets its access token. Because nothing is stored, the server can't cancel a token that was copied off the phone: it stays valid until it expires. Suspension still works, because every request and refresh checks the user's status.
 - **Many devices:** each sign-in gets its own tokens, so several phones can be signed in at once. Listing or signing out other devices needs stored sessions, which are left for later.
 - **App side:** on a 401 the app refreshes **once** (parallel requests share the same refresh), then retries.
-- **One flow for everyone:** the app tries Clerk sign-in, and if the email is unknown it creates the account instead. After that it asks only for a first name; the UPI ID is asked for only when someone becomes the booker.
+- **Passwords:** at least 8 characters, at most 72 bytes (bcrypt only reads 72, so longer ones are refused rather than silently cut). Stored only as a bcrypt hash (10 rounds, salted) in `User.passwordHash`; never returned by the API.
+- **Wrong email or wrong password** get the same answer, "Email or password is incorrect.", and take the same time (an unknown email is still checked against a dummy hash), so no one can learn which emails have accounts.
+- **Forgot password** is the sign-up path again: a fresh email code proves the inbox, then the new password replaces the old hash. Accounts made before passwords existed set theirs this way once.
+- **Google accounts** have no password (`passwordHash` stays empty) and sign in through Clerk each time.
+- **After sign-up** the app asks only for a first name; the UPI ID is asked for only when someone becomes the booker.
+- **Not yet:** a limit on login attempts. Worth adding before real users, since passwords can be guessed.
 
 | Route | Does |
 |---|---|
 | `GET /api/auth/warmup` | Wakes the database when the sign-in screen opens |
-| `POST /api/auth/login` | Swaps a Clerk token for our tokens |
+| `POST /api/auth/login` | Email + password → our tokens |
+| `POST /api/auth/set-password` | Clerk token (email proved by code) + new password → saves the hash, gives our tokens. Used for sign-up and forgot password |
+| `POST /api/auth/clerk` | Clerk token from Google sign-in → our tokens |
 | `POST /api/auth/refresh` | Gives a new token pair |
 | `POST /api/auth/logout` | Clears the refresh cookie |
 | `GET` / `PATCH /api/me` | Reads / updates your profile (first name) |
@@ -460,6 +498,7 @@ erDiagram
         enum status "ACTIVE | SUSPENDED"
         string phoneNumber UK
         string upiId "asked for only when booking"
+        string passwordHash "bcrypt; empty for Google-only accounts"
     }
 
 
@@ -527,6 +566,7 @@ erDiagram
 | `20261106120000_join_requests` | `JoinRequest` table and status enum |
 | `20261107090000_sessions` | `Session` table for our own auth |
 | `20261120090000_drop_sessions` | Dropped `Session`: refresh tokens are stateless JWTs for now |
+| `20261120120000_user_password_hash` | `User.passwordHash` for email + password login |
 
 Not in the schema yet: GIST indexes on ride points, ID verification fields, feedback, trusted contacts, moderation cases. `Chat` and `Message` exist from the first draft, but in-app chat is out of scope for v1.
 
@@ -554,7 +594,7 @@ If it grew:
 |---|---|---|
 | Hand off to Uber/Ola instead of booking | No partner API access; no liability | Can't read trip status; booker taps "Cab booked" |
 | UPI links instead of a payment gateway | Free, no KYC, never hold others' money | Payment isn't guaranteed; booker confirms |
-| Clerk only for the email code, own tokens after | Control over tokens and suspension; Clerk limits only touch login | We own token security |
+| Own passwords and tokens; Clerk only proves the email | Login doesn't depend on Clerk; full control over accounts and suspension | We own password security: hashing, generic errors, and (still to add) attempt limits |
 | Stateless JWT refresh tokens (no session table) | Nothing to store or clean up; many devices just work | Logout can't cancel a copied token; no device list or sign-out-everywhere |
 | Email code instead of phone OTP | Free (SMS to +91 numbers costs money) | Phone number isn't verified |
 | Redis for live location | Fast, auto-expiring, works across servers | One more service to run |
