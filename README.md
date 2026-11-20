@@ -499,6 +499,7 @@ erDiagram
         string phoneNumber UK
         string upiId "asked for only when booking"
         string passwordHash "bcrypt; empty for Google-only accounts"
+        string googleId UK "Google's id for the person, set at Google sign-in"
     }
 
 
@@ -567,6 +568,7 @@ erDiagram
 | `20261107090000_sessions` | `Session` table for our own auth |
 | `20261120090000_drop_sessions` | Dropped `Session`: refresh tokens are stateless JWTs for now |
 | `20261120120000_user_password_hash` | `User.passwordHash` for email + password login |
+| `20261120150000_user_google_id` | `User.googleId` (unique) for our own Google sign-in |
 
 Not in the schema yet: GIST indexes on ride points, ID verification fields, feedback, trusted contacts, moderation cases. `Chat` and `Message` exist from the first draft, but in-app chat is out of scope for v1.
 

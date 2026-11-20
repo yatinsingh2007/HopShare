@@ -37,6 +37,8 @@ model User {
   upiId       String?
   // bcrypt hash; empty for Google-only accounts
   passwordHash String?
+  // Google's id for the person (the ID token's `sub`); set when they sign in with Google
+  googleId     String?    @unique
 
   rides            Ride[]        @relation("RideUsers")
   createdRides     Ride[]        @relation("RideCreator")
