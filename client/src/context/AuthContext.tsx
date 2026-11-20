@@ -3,11 +3,12 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiFetch, ApiError } from '@/services/api';
 
 type RequestOptions = { method?: string; body?: unknown };
+type SignInPath = '/api/auth/login' | '/api/auth/set-password' | '/api/auth/clerk';
 
 type AuthContextValue = {
   isLoaded: boolean;
   isSignedIn: boolean;
-  signIn: (clerkToken: string) => Promise<void>;
+  signIn: (path: SignInPath, body: object) => Promise<void>;
   signOut: () => Promise<void>;
   request: <T>(path: string, options?: RequestOptions) => Promise<T>;
 };
@@ -71,13 +72,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [refresh],
   );
 
+  // every way in (password, email code + new password, Google) ends with our access token
   const signIn = useCallback(
-    async (clerkToken: string) => {
-      const data = await apiFetch<{ accessToken: string }>('/api/auth/login', {
-        token: null,
-        method: 'POST',
-        body: { clerkToken },
-      });
+    async (path: SignInPath, body: object) => {
+      const data = await apiFetch<{ accessToken: string }>(path, { token: null, method: 'POST', body });
       await save(data.accessToken);
     },
     [save],

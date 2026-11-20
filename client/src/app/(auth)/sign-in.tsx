@@ -26,21 +26,22 @@ const RESEND_SECONDS = 30;
 
 const COPY = {
   signup: {
-    title: 'Start with your email',
-    body: "We'll email you a 6-digit code. No password to remember.",
+    title: 'Create your account',
+    body: "We'll email you a 6-digit code to confirm it's you, then you'll choose a password.",
     switchPrompt: 'Already have an account?',
     switchLabel: 'Log in',
     switchTo: 'login',
   },
   login: {
     title: 'Welcome back',
-    body: "Enter the email you signed up with and we'll send you a code.",
+    body: 'Log in with your email and password.',
     switchPrompt: 'New to HopShare?',
     switchLabel: 'Create an account',
     switchTo: 'signup',
   },
 } as const;
 
+const MIN_PASSWORD = 8;
 const isEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(value);
 
 function BackButton({ onPress }: { onPress: () => void }) {
@@ -72,7 +73,11 @@ export default function SignIn() {
 
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
-  const [step, setStep] = useState<'email' | 'code'>('email');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [step, setStep] = useState<'start' | 'code' | 'password'>('start');
+  // why the email code was sent: a new account, or "forgot password"
+  const [purpose, setPurpose] = useState<'signup' | 'reset'>('signup');
   const [flow, setFlow] = useState<'signIn' | 'signUp'>('signIn');
   const [busy, setBusy] = useState(false);
   const [googleBusy, setGoogleBusy] = useState(false);
@@ -89,12 +94,12 @@ export default function SignIn() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Clerk has checked the code (or Google). Swap its token for our own and drop the Clerk session.
-  const finishSignIn = async () => {
+  // Clerk has proved the email (code) or Google account. Send its token to our server once, then drop the Clerk session.
+  const withClerkToken = async (path: '/api/auth/set-password' | '/api/auth/clerk', body: object = {}) => {
     const clerkToken = await clerk.getToken();
-    if (!clerkToken) throw new Error('No Clerk token');
+    if (!clerkToken) throw new ApiError(401, 'That code has expired. Please start again.');
     try {
-      await session.signIn(clerkToken);
+      await session.signIn(path, { ...body, clerkToken });
     } finally {
       await clerk.signOut().catch(() => {});
     }
@@ -109,7 +114,8 @@ export default function SignIn() {
   }, [resendIn]);
 
   // Clerk tells us whether the email already has an account, so either mode works for either user.
-  const sendCode = async () => {
+  const sendCode = async (why: 'signup' | 'reset' = purpose) => {
+    setPurpose(why);
     setBusy(true);
     setError(null);
     try {
@@ -158,7 +164,8 @@ export default function SignIn() {
         setError(GENERIC_ERROR);
         return;
       }
-      await finishSignIn();
+      setPassword('');
+      setStep('password');
     } catch (e) {
       showError(e);
     } finally {
@@ -174,7 +181,7 @@ export default function SignIn() {
       const { createdSessionId, setActive } = await startSSOFlow({ strategy: 'oauth_google' });
       if (!createdSessionId || !setActive) return;
       await setActive({ session: createdSessionId });
-      await finishSignIn();
+      await withClerkToken('/api/auth/clerk');
     } catch (e) {
       showError(e);
     } finally {
@@ -182,16 +189,102 @@ export default function SignIn() {
     }
   };
 
-  const changeEmail = () => {
+  const logIn = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await session.signIn('/api/auth/login', { email: emailAddress, password });
+    } catch (e) {
+      showError(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const forgotPassword = () => {
+    if (!isEmail(emailAddress)) {
+      setError('Enter your email first, then tap Forgot password.');
+      return;
+    }
+    sendCode('reset');
+  };
+
+  const savePassword = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await withClerkToken('/api/auth/set-password', { password });
+    } catch (e) {
+      showError(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const startOver = () => {
     setError(null);
     setCode('');
-    setStep('email');
+    setPassword('');
+    setStep('start');
+    clerk.signOut().catch(() => {});
   };
+
+  const passwordField = (label: string, isNew: boolean, onSubmit: () => void) => (
+    <View style={styles.group}>
+      <TextField
+        label={label}
+        value={password}
+        onChangeText={setPassword}
+        secureTextEntry={!showPassword}
+        autoComplete={isNew ? 'new-password' : 'current-password'}
+        textContentType={isNew ? 'newPassword' : 'password'}
+        autoCapitalize="none"
+        autoCorrect={false}
+        returnKeyType="go"
+        onSubmitEditing={onSubmit}
+        placeholder={isNew ? `At least ${MIN_PASSWORD} characters` : 'Your password'}
+        error={error}
+      />
+      <View style={styles.passwordLinks}>
+        <Button label={showPassword ? 'Hide password' : 'Show password'} variant="text" onPress={() => setShowPassword((v) => !v)} />
+        {!isNew ? <Button label="Forgot password?" variant="text" onPress={forgotPassword} disabled={busy} /> : null}
+      </View>
+    </View>
+  );
+
+  if (step === 'password') {
+    const isReset = purpose === 'reset';
+    const submit = () => password.length >= MIN_PASSWORD && !busy && savePassword();
+    return (
+      <Screen>
+        <BackButton onPress={startOver} />
+        <KeyboardAvoidingView behavior="height" style={styles.flex}>
+          <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+            <View style={styles.intro}>
+              <Text style={[type.headline, { color: colors.ink }]} accessibilityRole="header">
+                {isReset ? 'Set a new password' : 'Choose a password'}
+              </Text>
+              <Text style={[type.body, { color: colors.muted }]}>
+                You’ll log in with <Text style={{ color: colors.ink }}>{emailAddress}</Text> and this password.
+              </Text>
+            </View>
+            {passwordField(isReset ? 'New password' : 'Password', true, submit)}
+            <Button
+              label={isReset ? 'Save and log in' : 'Create account'}
+              onPress={savePassword}
+              loading={busy}
+              disabled={password.length < MIN_PASSWORD}
+            />
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </Screen>
+    );
+  }
 
   if (step === 'code') {
     return (
       <Screen>
-        <BackButton onPress={changeEmail} />
+        <BackButton onPress={startOver} />
         <KeyboardAvoidingView behavior="height" style={styles.flex}>
           <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
             <View style={styles.intro}>
@@ -210,9 +303,9 @@ export default function SignIn() {
                   Resend code in 0:{String(resendIn).padStart(2, '0')}
                 </Text>
               ) : (
-                <Button label="Resend code" variant="text" onPress={sendCode} disabled={busy} />
+                <Button label="Resend code" variant="text" onPress={() => sendCode()} disabled={busy} />
               )}
-              <Button label="Change email" variant="text" onPress={changeEmail} />
+              <Button label="Change email" variant="text" onPress={startOver} />
             </View>
           </ScrollView>
         </KeyboardAvoidingView>
@@ -242,10 +335,10 @@ export default function SignIn() {
               textContentType="emailAddress"
               autoCapitalize="none"
               autoCorrect={false}
-              returnKeyType="send"
-              onSubmitEditing={() => isEmail(emailAddress) && !busy && sendCode()}
+              returnKeyType={mode === 'login' ? 'next' : 'send'}
+              onSubmitEditing={() => mode === 'signup' && isEmail(emailAddress) && !busy && sendCode('signup')}
               placeholder="you@example.com"
-              error={error}
+              error={mode === 'signup' ? error : null}
             />
             <View style={styles.promise}>
               <Icon name="lock" size={16} color={colors.accentText} />
@@ -255,7 +348,19 @@ export default function SignIn() {
             </View>
           </View>
 
-          <Button label="Send code" onPress={sendCode} loading={busy} disabled={!isEmail(emailAddress) || googleBusy} />
+          {mode === 'login' ? (
+            <>
+              {passwordField('Password', false, () => isEmail(emailAddress) && password && !busy && logIn())}
+              <Button label="Log in" onPress={logIn} loading={busy} disabled={!isEmail(emailAddress) || !password || googleBusy} />
+            </>
+          ) : (
+            <Button
+              label="Send code"
+              onPress={() => sendCode('signup')}
+              loading={busy}
+              disabled={!isEmail(emailAddress) || googleBusy}
+            />
+          )}
 
           <View style={styles.or}>
             <View style={[styles.orLine, { backgroundColor: colors.line }]} />
@@ -276,7 +381,15 @@ export default function SignIn() {
 
       <View style={styles.switch}>
         <Text style={[type.bodySmall, { color: colors.muted }]}>{copy.switchPrompt}</Text>
-        <Button label={copy.switchLabel} variant="text" onPress={() => router.setParams({ mode: copy.switchTo })} />
+        <Button
+          label={copy.switchLabel}
+          variant="text"
+          onPress={() => {
+            setError(null);
+            setPassword('');
+            router.setParams({ mode: copy.switchTo });
+          }}
+        />
       </View>
     </Screen>
   );
@@ -291,6 +404,7 @@ const styles = StyleSheet.create({
   promise: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   or: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   orLine: { flex: 1, height: 1 },
+  passwordLinks: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 40 },
   links: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 48 },
   switch: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 2 },
 });

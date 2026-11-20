@@ -35,6 +35,8 @@ model User {
   status      UserStatus @default(ACTIVE)
   phoneNumber String?    @unique
   upiId       String?
+  // bcrypt hash; empty for Google-only accounts
+  passwordHash String?
 
   rides            Ride[]        @relation("RideUsers")
   createdRides     Ride[]        @relation("RideCreator")
