@@ -38,16 +38,10 @@ const refresh = async (req, res) => {
   res.json({ success: true, data: { accessToken: tokens.accessToken } });
 };
 
-const logout = async (req, res) => {
-  await authService.logout(req.cookies?.[REFRESH_COOKIE]);
+// tokens aren't stored, so signing out just drops the cookie; the app forgets its access token
+const logout = (req, res) => {
   res.clearCookie(REFRESH_COOKIE, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'strict', path: '/api/auth' });
   res.json({ success: true, message: 'Signed out.' });
 };
 
-const logoutAll = async (req, res) => {
-  await authService.logoutAll(req.user.id);
-  res.clearCookie(REFRESH_COOKIE, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'strict', path: '/api/auth' });
-  res.json({ success: true, message: 'Signed out on all devices.' });
-};
-
-module.exports = { warmUp, login, refresh, logout, logoutAll };
+module.exports = { warmUp, login, refresh, logout };

@@ -40,7 +40,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     else await AsyncStorage.removeItem(KEY);
   }, []);
 
-  // only one refresh at a time: the server ends the session if the same refresh token is used twice
+  // only one refresh at a time, so parallel 401s share one new token instead of racing
   const refresh = useCallback(() => {
     refreshing.current ??= apiFetch<{ accessToken: string }>('/api/auth/refresh', { token: null, method: 'POST' })
       .then(async (data) => {
