@@ -88,8 +88,8 @@ flowchart TB
 
     subgraph API["Server: Node + Express"]
         MW[requireUser<br/>checks our JWT]
-        Routes[Routes → Controllers]
-        Services[Services<br/>auth, user, ride, match, fare]
+        Routes[Routes]
+        Services[Controllers<br/>auth, me, ride, match, fare]
         Sock[Socket.io gateway<br/>planned]
     end
 
@@ -124,7 +124,7 @@ Solid lines are built; dotted lines are planned.
 | Photon / OpenFreeMap | Place search, reverse geocoding, map tiles | Built (called from the app) |
 | DigiLocker aggregator | ID verification before joining a group | Planned |
 
-**Server layering:** `routes → controllers → services → Prisma`. Controllers only read the request and shape the response; all rules live in services, so socket handlers can reuse them. Every error is `{ "success": false, "message": "..." }`.
+**Server layering:** `routes → controllers → Prisma`. Each controller holds its feature's logic and talks to Prisma directly; there's no separate services layer. `requireUser` (middleware) checks the access token before protected routes. Every error is `{ "success": false, "message": "..." }`.
 
 ## 2. One ride end to end
 
@@ -607,7 +607,7 @@ If it grew:
 
 ```
 client/   Expo app: screens in src/app (Stack + Tabs), components, context, hooks, services
-server/   Express API: src/{config,controllers,middleware,routes,services}, prisma/ schema and migrations
+server/   Express API: src/{config,controllers,middleware,routes}, prisma/ schema and migrations
 docs/     schema/ first schema draft (image)
 ```
 
