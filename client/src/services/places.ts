@@ -4,6 +4,8 @@ import type { Place } from '@/services/cabApps';
 // Photon (OpenStreetMap data, free, no key). Planned to move behind our server as /api/places.
 const PHOTON = 'https://photon.komoot.io';
 const RECENT_KEY = 'hopshare.recentDestinations';
+// Photon's server refuses (403) Android's default okhttp User-Agent, so name the app instead.
+const PHOTON_HEADERS = { 'User-Agent': 'HopShare/1.0 (Android app)' };
 
 export type PlaceResult = Place & { id: string; detail: string };
 
@@ -33,7 +35,7 @@ const toResult = ({ geometry, properties: p }: PhotonFeature): PlaceResult => {
 
 export async function searchPlaces(q: string, near: Place | null, signal?: AbortSignal) {
   const bias = near ? `&lat=${near.latitude}&lon=${near.longitude}` : '';
-  const res = await fetch(`${PHOTON}/api/?q=${encodeURIComponent(q)}&limit=6&lang=en${bias}`, { signal });
+  const res = await fetch(`${PHOTON}/api/?q=${encodeURIComponent(q)}&limit=6&lang=en${bias}`, { signal, headers: PHOTON_HEADERS });
   if (!res.ok) throw new Error('Search is unavailable right now.');
   const { features } = (await res.json()) as { features: PhotonFeature[] };
   return features.map(toResult);
@@ -58,7 +60,7 @@ async function stationsAround(near: Place, delta: number, signal?: AbortSignal) 
   const bbox = `${lon - delta},${lat - delta},${lon + delta},${lat + delta}`;
   const pages = await Promise.all(
     STATION_WORDS.map(async (word) => {
-      const res = await fetch(`${PHOTON}/api/?q=${word}&bbox=${bbox}&limit=30&lang=en${STATION_TAGS}`, { signal });
+      const res = await fetch(`${PHOTON}/api/?q=${word}&bbox=${bbox}&limit=30&lang=en${STATION_TAGS}`, { signal, headers: PHOTON_HEADERS });
       if (!res.ok) return [];
       return ((await res.json()) as { features: PhotonFeature[] }).features;
     }),
@@ -85,7 +87,7 @@ export async function nearbyStations(near: Place, signal?: AbortSignal) {
 }
 
 export async function nameForPoint(latitude: number, longitude: number) {
-  const res = await fetch(`${PHOTON}/reverse?lat=${latitude}&lon=${longitude}&limit=1&lang=en`);
+  const res = await fetch(`${PHOTON}/reverse?lat=${latitude}&lon=${longitude}&limit=1&lang=en`, { headers: PHOTON_HEADERS });
   const { features } = (await res.json()) as { features: PhotonFeature[] };
   return features[0] ? toResult(features[0]).name : null;
 }
