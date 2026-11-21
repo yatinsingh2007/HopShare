@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import { StyleSheet, Text, TextInput, View, type TextInputProps } from 'react-native';
 import { useTheme } from '@/context/ThemeContext';
+import { type } from '@/theme/type';
 
 type TextFieldProps = TextInputProps & {
   label: string;
@@ -7,28 +9,43 @@ type TextFieldProps = TextInputProps & {
   error?: string | null;
 };
 
-export function TextField({ label, helper, error, style, ...inputProps }: TextFieldProps) {
+export function TextField({ label, helper, error, style, onFocus, onBlur, ...inputProps }: TextFieldProps) {
   const { colors } = useTheme();
+  const [focused, setFocused] = useState(false);
   return (
     <View style={styles.wrap}>
-      <Text style={[styles.label, { color: colors.ink }]}>{label}</Text>
+      <Text style={[type.label, { color: colors.ink }]}>{label}</Text>
       <View
         style={[
           styles.field,
-          { backgroundColor: colors.field, borderColor: error ? colors.danger : colors.line },
+          {
+            backgroundColor: colors.field,
+            borderColor: error ? colors.danger : focused ? colors.ink : colors.line,
+            borderWidth: error || focused ? 2 : 1.5,
+          },
         ]}
       >
         <TextInput
           accessibilityLabel={label}
           placeholderTextColor={colors.muted}
-          style={[styles.input, { color: colors.ink }, style]}
+          selectionColor={colors.accentText}
+          cursorColor={colors.ink}
+          onFocus={(e) => {
+            setFocused(true);
+            onFocus?.(e);
+          }}
+          onBlur={(e) => {
+            setFocused(false);
+            onBlur?.(e);
+          }}
+          style={[type.body, styles.input, { color: colors.ink }, style]}
           {...inputProps}
         />
       </View>
       {error ? (
-        <Text style={[styles.meta, { color: colors.danger }]}>{error}</Text>
+        <Text style={[type.bodySmall, { color: colors.danger }]}>{error}</Text>
       ) : helper ? (
-        <Text style={[styles.meta, { color: colors.muted }]}>{helper}</Text>
+        <Text style={[type.bodySmall, { color: colors.muted }]}>{helper}</Text>
       ) : null}
     </View>
   );
@@ -36,8 +53,6 @@ export function TextField({ label, helper, error, style, ...inputProps }: TextFi
 
 const styles = StyleSheet.create({
   wrap: { gap: 6 },
-  label: { fontSize: 14, fontWeight: '600' },
-  field: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 12, paddingHorizontal: 14 },
-  input: { flex: 1, fontSize: 16, paddingVertical: 13 },
-  meta: { fontSize: 13 },
+  field: { flexDirection: 'row', alignItems: 'center', borderRadius: 12, paddingHorizontal: 14, minHeight: 56 },
+  input: { flex: 1, paddingVertical: 12 },
 });

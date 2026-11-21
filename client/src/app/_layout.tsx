@@ -5,9 +5,12 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SplashScreen from 'expo-splash-screen';
 import { useFonts } from 'expo-font';
 import {
-  SchibstedGrotesk_700Bold,
-  SchibstedGrotesk_800ExtraBold,
-} from '@expo-google-fonts/schibsted-grotesk';
+  Mukta_400Regular,
+  Mukta_500Medium,
+  Mukta_600SemiBold,
+  Mukta_700Bold,
+  Mukta_800ExtraBold,
+} from '@expo-google-fonts/mukta';
 import { ClerkProvider } from '@clerk/expo';
 import { tokenCache } from '@clerk/expo/token-cache';
 import { ThemeContext, type ThemePreference } from '@/context/ThemeContext';
@@ -38,6 +41,7 @@ function RootStack() {
       <Stack.Protected guard={isSignedIn}>
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="profile-setup" />
+        <Stack.Screen name="ride/[id]" />
       </Stack.Protected>
     </Stack>
   );
@@ -45,7 +49,13 @@ function RootStack() {
 
 export default function RootLayout() {
   // If the font fails to load, render anyway with the system face rather than hang on the splash.
-  const [fontsLoaded, fontError] = useFonts({ SchibstedGrotesk_700Bold, SchibstedGrotesk_800ExtraBold });
+  const [fontsLoaded, fontError] = useFonts({
+    Mukta_400Regular,
+    Mukta_500Medium,
+    Mukta_600SemiBold,
+    Mukta_700Bold,
+    Mukta_800ExtraBold,
+  });
   const ready = fontsLoaded || !!fontError;
 
   // Theme: 'system' follows the phone; 'light' / 'dark' is the rider's saved choice.

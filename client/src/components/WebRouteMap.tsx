@@ -24,9 +24,9 @@ const page = (styleUrl: string, c: ColorTokens) => `<!DOCTYPE html>
     animation: pulse 1.8s cubic-bezier(.5,1,.89,1) infinite; }
   .dot b { width: 12px; height: 12px; border-radius: 9px; background: ${c.accent}; border: 3px solid ${c.accentInk}; }
   @keyframes pulse { from { transform: scale(1); opacity: .55; } to { transform: scale(2.6); opacity: 0; } }
-  .pin { width: 26px; height: 26px; border-radius: 13px 13px 3px 13px; background: ${c.ink}; transform: rotate(45deg);
-    display: flex; align-items: center; justify-content: center; margin-bottom: 6px; }
-  .pin b { width: 9px; height: 9px; border-radius: 5px; background: ${c.accent}; }
+  .pin { width: 22px; height: 22px; border-radius: 4px; background: ${c.coach}; border: 3px solid ${c.coachInk};
+    display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 6px rgba(0,0,0,.25); }
+  .pin b { width: 6px; height: 6px; border-radius: 1px; background: ${c.coachInk}; }
   .maplibregl-ctrl-attrib { font-size: 10px; }
   /* markers settle in from slightly above, so a new pick reads as "placed here" */
   .appear { animation: appear 280ms cubic-bezier(.23,1,.32,1) both; }
@@ -54,7 +54,7 @@ const page = (styleUrl: string, c: ColorTokens) => `<!DOCTYPE html>
     return m;
   }
   var pickupMarker = marker('dot', 'center');
-  var dropMarker = marker('pin', 'bottom');
+  var dropMarker = marker('pin', 'center');
   var loaded = false, latest = null, lastRoute = null;
 
   // hide the line instantly, then fade it in over 400ms
@@ -110,12 +110,14 @@ const page = (styleUrl: string, c: ColorTokens) => `<!DOCTYPE html>
   map.on('load', function () {
     map.addSource('route', { type: 'geojson', data: empty });
     map.addLayer({
+      id: 'route-casing', type: 'line', source: 'route',
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': '${c.card}', 'line-width': 9 },
+    });
+    map.addLayer({
       id: 'route-line', type: 'line', source: 'route',
       layout: { 'line-cap': 'round', 'line-join': 'round' },
-      paint: {
-        'line-color': '${c.ink}', 'line-width': 3, 'line-dasharray': [0.1, 2],
-        'line-opacity': 1,
-      },
+      paint: { 'line-color': '${c.route}', 'line-width': 5 },
     });
     loaded = true;
     if (latest) draw(latest);
