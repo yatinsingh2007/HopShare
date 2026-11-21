@@ -55,6 +55,10 @@ const kmBetween = (a: Place, b: Place) => {
   return 2 * 6371 * Math.asin(Math.sqrt(h));
 };
 
+// Straight-line distance as "850 m" or "3.4 km".
+const formatKm = (km: number) => (km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`);
+export const distanceBetween = (a: Place, b: Place) => formatKm(kmBetween(a, b));
+
 async function stationsAround(near: Place, delta: number, signal?: AbortSignal) {
   const { latitude: lat, longitude: lon } = near;
   const bbox = `${lon - delta},${lat - delta},${lon + delta},${lat + delta}`;
@@ -76,7 +80,7 @@ async function stationsAround(near: Place, delta: number, signal?: AbortSignal) 
   }
   return [...closest.values()]
     .sort((a, b) => a.km - b.km)
-    .map(({ place, km }) => ({ ...place, detail: `${km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`} away` }));
+    .map(({ place, km }) => ({ ...place, detail: `${formatKm(km)} away` }));
 }
 
 // The nearest metro and railway stations: about 4 km around, or about 10 km if that finds too few.

@@ -20,13 +20,20 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
+import { router } from 'expo-router';
 import type { AndroidSymbol } from 'expo-symbols';
 import { Button } from '@/components/Button';
 import { Icon } from '@/components/Icon';
+import { Pictogram } from '@/components/Pictogram';
+import { clock, groupCode, RideCard } from '@/components/RideCard';
 import { RouteMap } from '@/components/RouteMap';
+import { SignBand } from '@/components/SignBand';
 import { useTheme } from '@/context/ThemeContext';
 import { useMe } from '@/hooks/useMe';
+import { useMyRequests, type MyRequest } from '@/hooks/useMyRequests';
+import { useMyRides } from '@/hooks/useMyRides';
 import {
+  distanceBetween,
   getRecentDestinations,
   nearbyStations,
   nameForPoint,
@@ -103,9 +110,7 @@ function PlaceRow({ icon, place, onPress, index }: {
         android_ripple={{ color: colors.line }}
         style={styles.placeRow}
       >
-        <View style={[styles.placeIcon, { backgroundColor: colors.pill }]}>
-          <Icon name={icon} size={18} color={colors.accentText} />
-        </View>
+        <Pictogram name={icon} size={36} />
         <View style={styles.flex}>
           <Text style={[type.title, { color: colors.ink }]} numberOfLines={1}>{place.name}</Text>
           {place.detail ? (
@@ -117,12 +122,42 @@ function PlaceRow({ icon, place, onPress, index }: {
   );
 }
 
+function RequestRow({ req, onWithdraw }: { req: MyRequest; onWithdraw: () => void }) {
+  const { colors } = useTheme();
+  const [busy, setBusy] = useState(false);
+  return (
+    <Animated.View
+      entering={FadeInDown.duration(240)}
+      style={[styles.request, { backgroundColor: colors.card, borderColor: colors.line }]}
+    >
+      <Pictogram name="hourglass_top" size={40} tone="sign" />
+      <View style={styles.flex}>
+        <Text style={[type.title, type.figure, { color: colors.ink }]} numberOfLines={1}>
+          {groupCode(req.rideId)} · leaves {clock(req.leaveAt)}
+        </Text>
+        <Text style={[type.bodySmall, { color: colors.muted }]} numberOfLines={2}>
+          to {req.destinationName} · waiting for {req.creatorName ?? 'the group'} to accept
+        </Text>
+      </View>
+      <Button
+        label="Withdraw"
+        variant="text"
+        loading={busy}
+        onPress={() => {
+          setBusy(true);
+          Promise.resolve(onWithdraw()).finally(() => setBusy(false));
+        }}
+      />
+    </Animated.View>
+  );
+}
+
 function LeavingChips({ value, onChange }: { value: number; onChange: (m: number) => void }) {
   const { colors } = useTheme();
   return (
     <View style={styles.section}>
       <View style={styles.sectionHead}>
-        <Text style={[type.label, { color: colors.ink }]}>Leaving</Text>
+        <Text style={[type.title, { color: colors.ink }]}>Leaving</Text>
         <Text style={[type.bodySmall, type.figure, { color: colors.muted }]}>
           {value === 0 ? 'Right away' : `around ${clockIn(value)}`}
         </Text>
@@ -141,7 +176,7 @@ function LeavingChips({ value, onChange }: { value: number; onChange: (m: number
                 styles.chip,
                 selected
                   ? { backgroundColor: colors.accent, borderColor: colors.accent }
-                  : { backgroundColor: colors.card, borderColor: colors.line },
+                  : { backgroundColor: colors.card, borderColor: colors.ink },
                 pressed && styles.pressed,
               ]}
             >
@@ -161,6 +196,8 @@ export default function Home() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const { me } = useMe();
+  const { liveRide } = useMyRides();
+  const { requests, withdraw } = useMyRequests();
   const { pickup, setPickup, locating, denied, locate } = useCurrentPickup();
 
   const [height, setHeight] = useState(0);
@@ -253,10 +290,25 @@ export default function Home() {
   };
 
   const findRiders = async () => {
-    if (!destination) return;
+    if (!pickup || !destination) return;
+    // "Current location" means nothing to other riders, so send the street we found for the GPS point.
+    const place = ({ id, latitude, longitude, name, detail }: PlaceResult) =>
+      JSON.stringify({
+        latitude,
+        longitude,
+        name: id === 'gps' ? (detail.startsWith('Near ') ? detail.slice(5) : 'Pickup point') : name,
+      });
+    router.push({
+      pathname: '/home/groups',
+      params: {
+        pickup: place(pickup),
+        destination: place(destination),
+        leaveAt: new Date(Date.now() + leaveIn * 60_000).toISOString(),
+        leaveIn: String(leaveIn),
+      },
+    });
     await saveRecentDestination(destination);
     setRecent(await getRecentDestinations());
-    // Next: open matched groups (spec 4.4) with pickup, destination and leaveIn.
   };
 
   const sheetStyle = useAnimatedStyle(() => ({ transform: [{ translateY: sheetY.value }] }));
@@ -268,6 +320,10 @@ export default function Home() {
 
   const pickupLabel = pickup?.name ?? (locating ? 'Finding you…' : 'Set your pickup');
   const pickupDetail = pickup?.detail || (denied && !pickup ? 'Location is off. Search for a place instead.' : '');
+  // Station details say "… away" from when they were found; the sign band shows the fresh distance instead.
+  const destinationDetail = destination && !destination.detail.endsWith(' away') ? destination.detail : '';
+  // How far the destination is from the pickup, worked out fresh so it follows pickup changes.
+  const distance = pickup && destination ? distanceBetween(pickup, destination) : null;
 
   const renderField = (field: Field) => {
     const editing = active === field;
@@ -297,7 +353,7 @@ export default function Home() {
       <Pressable
         onPress={() => setActive(field)}
         accessibilityRole="button"
-        accessibilityLabel={isPickup ? `Pickup: ${pickupLabel}` : destination ? `Destination: ${destination.name}` : placeholder}
+        accessibilityLabel={isPickup ? `Pickup: ${pickupLabel}` : destination ? `Destination: ${[destination.name, destinationDetail, distance && `${distance} away`].filter(Boolean).join(', ')}` : placeholder}
         style={styles.fieldRow}
       >
         <View style={styles.flex}>
@@ -311,8 +367,8 @@ export default function Home() {
           ) : place ? (
             <>
               <Text style={[type.title, { color: colors.ink }]} numberOfLines={1}>{place.name}</Text>
-              {place.detail ? (
-                <Text style={[type.bodySmall, { color: colors.muted }]} numberOfLines={1}>{place.detail}</Text>
+              {destinationDetail ? (
+                <Text style={[type.bodySmall, type.figure, { color: colors.muted }]} numberOfLines={1}>{destinationDetail}</Text>
               ) : null}
             </>
           ) : (
@@ -344,9 +400,7 @@ export default function Home() {
             android_ripple={{ color: colors.line }}
             style={styles.placeRow}
           >
-            <View style={[styles.placeIcon, { backgroundColor: colors.pill }]}>
-              <Icon name="my_location" size={18} color={colors.accentText} />
-            </View>
+            <Pictogram name="my_location" size={36} tone="sign" />
             <Text style={[type.title, { color: colors.ink }]}>Use my current location</Text>
           </Pressable>
         </Animated.View>
@@ -414,9 +468,9 @@ export default function Home() {
               <View style={styles.head}>
                 <View style={styles.flex}>
                   {!active && me?.firstName ? (
-                    <Text style={[type.bodySmall, { color: colors.muted }]}>Hi, {me.firstName}</Text>
+                    <Text style={[type.body, { color: colors.muted }]}>Hi, {me.firstName}</Text>
                   ) : null}
-                  <Text style={[type.headline, { color: colors.ink }]} accessibilityRole="header">
+                  <Text style={[active ? type.headline : type.display, { color: colors.ink }]} accessibilityRole="header">
                     {active === 'pickup' ? 'Pickup point' : 'Where to?'}
                   </Text>
                 </View>
@@ -440,7 +494,7 @@ export default function Home() {
                       <View key={i} style={[styles.railBit, { backgroundColor: colors.muted }]} />
                     ))}
                   </View>
-                  <View style={[styles.railSquare, { backgroundColor: colors.ink }]} />
+                  <View style={[styles.railSquare, { backgroundColor: colors.coach }]} />
                 </View>
                 <View style={styles.flex}>
                   {renderField('pickup')}
@@ -449,13 +503,35 @@ export default function Home() {
                 </View>
               </View>
 
+              {!active && destination && distance ? (
+                <SignBand
+                  icon="route"
+                  title={`${distance} to ${destination.name}`}
+                  detail="We match groups within 1 km of both ends"
+                />
+              ) : null}
+
               {active ? (
                 <View style={styles.list}>{suggestions()}</View>
               ) : (
                 <>
+                  {liveRide ? (
+                    <View style={styles.section}>
+                      <Text style={[type.title, { color: colors.ink }]}>Your ride</Text>
+                      <RideCard ride={liveRide} />
+                    </View>
+                  ) : null}
+                  {requests.length ? (
+                    <View style={styles.section}>
+                      <Text style={[type.title, { color: colors.ink }]}>Waiting to join</Text>
+                      {requests.map((r) => (
+                        <RequestRow key={r.id} req={r} onWithdraw={() => withdraw(r).catch(() => {})} />
+                      ))}
+                    </View>
+                  ) : null}
                   <LeavingChips value={leaveIn} onChange={setLeaveIn} />
                   <View style={styles.section}>
-                    <Text style={[type.label, { color: colors.ink }]}>Recent</Text>
+                    <Text style={[type.title, { color: colors.ink }]}>Recent</Text>
                     {recent.length ? (
                       <View style={styles.list}>
                         {recent.map((p, i) => (
@@ -492,13 +568,13 @@ export default function Home() {
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  pressed: { opacity: 0.85, transform: [{ scale: 0.97 }] },
+  pressed: { transform: [{ scale: 0.97 }] },
   locate: { position: 'absolute', right: 16 },
   locateButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    borderWidth: 1,
+    width: 52,
+    height: 52,
+    borderRadius: 12,
+    borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
     elevation: 3,
@@ -518,31 +594,31 @@ const styles = StyleSheet.create({
   handle: { width: 36, height: 4, borderRadius: 2, alignSelf: 'center', marginTop: 10 },
   sheetBody: { paddingHorizontal: 20, paddingTop: 14, gap: 22 },
   head: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  closeButton: { width: 44, height: 44, borderRadius: 22, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  routeCard: { flexDirection: 'row', borderWidth: 1, borderRadius: 20, paddingLeft: 16, paddingRight: 12 },
-  rail: { width: 14, alignItems: 'center', paddingVertical: 24, marginRight: 14 },
-  railDot: { width: 14, height: 14, borderRadius: 7, borderWidth: 3 },
+  closeButton: { width: 48, height: 48, borderRadius: 12, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
+  routeCard: { flexDirection: 'row', borderWidth: 1.5, borderRadius: 12, paddingLeft: 16, paddingRight: 12 },
+  rail: { width: 16, alignItems: 'center', paddingVertical: 26, marginRight: 14 },
+  railDot: { width: 16, height: 16, borderRadius: 8, borderWidth: 3 },
   railDots: { flex: 1, justifyContent: 'space-evenly', paddingVertical: 4 },
-  railBit: { width: 3, height: 3, borderRadius: 1.5 },
-  railSquare: { width: 12, height: 12, borderRadius: 3 },
+  railBit: { width: 3, height: 6, borderRadius: 1.5 },
+  railSquare: { width: 14, height: 14, borderRadius: 3 },
   fieldRow: { minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 },
   input: { flex: 1, paddingVertical: 8 },
   divider: { height: 1 },
   section: { gap: 12 },
+  request: { flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 1.5, borderRadius: 12, paddingLeft: 12, paddingVertical: 10 },
   sectionHead: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
   chips: { gap: 8, paddingRight: 20 },
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    minHeight: 44,
-    paddingHorizontal: 16,
-    borderRadius: 22,
-    borderWidth: 1,
+    minHeight: 48,
+    paddingHorizontal: 18,
+    borderRadius: 8,
+    borderWidth: 1.5,
   },
   list: { gap: 2, marginHorizontal: -8 },
-  placeRow: { flexDirection: 'row', alignItems: 'center', gap: 14, minHeight: 60, paddingHorizontal: 8, borderRadius: 14 },
-  placeIcon: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  placeRow: { flexDirection: 'row', alignItems: 'center', gap: 14, minHeight: 64, paddingHorizontal: 8, borderRadius: 8 },
   note: { paddingHorizontal: 8, paddingVertical: 12 },
   listLabel: { paddingHorizontal: 8, paddingTop: 12, paddingBottom: 4 },
   footer: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 20, paddingTop: 12, paddingBottom: 16, borderTopWidth: 1 },
