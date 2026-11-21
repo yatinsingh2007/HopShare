@@ -10,7 +10,7 @@ export type PublicMe = {
   profileComplete: boolean;
 };
 
-export type ProfilePatch = { firstName: string };
+export type ProfilePatch = { firstName?: string; upiId?: string };
 
 export function useMe() {
   const { isSignedIn, request } = useSession();

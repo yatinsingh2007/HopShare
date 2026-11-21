@@ -50,7 +50,14 @@
       ],
       "@maplibre/maplibre-react-native",
       "expo-image",
-      "expo-status-bar"
+      "expo-status-bar",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/android-icon-monochrome.png",
+          "color": "#3d6b00"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

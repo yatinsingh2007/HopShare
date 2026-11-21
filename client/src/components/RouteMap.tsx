@@ -65,18 +65,27 @@ function PickupDot() {
   );
 }
 
+// the drop is the coach chart's maroon square, so it can never be mistaken for the pickup dot
 function DropPin() {
   const { colors } = useTheme();
   return (
-    <View style={[styles.pin, { backgroundColor: colors.ink }]}>
-      <View style={[styles.pinCore, { backgroundColor: colors.accent }]} />
+    <View style={[styles.pin, { backgroundColor: colors.coach, borderColor: colors.coachInk }]}>
+      <View style={[styles.pinCore, { backgroundColor: colors.coachInk }]} />
     </View>
   );
 }
 
-export function RouteMap({ pickup, destination, bottomInset }: {
+// someone else's stop (a rider asking to join): an outlined maroon square, so it reads as "not ours yet"
+function ExtraPin() {
+  const { colors } = useTheme();
+  return <View style={[styles.extra, { borderColor: colors.coach, backgroundColor: colors.card }]} />;
+}
+
+export function RouteMap({ pickup, destination, extra, bottomInset }: {
   pickup: Place | null;
   destination: Place | null;
+  /** An extra stop to show and fit in view, e.g. a requester's drop. */
+  extra?: Place | null;
   /** Height of whatever covers the bottom of the map, so the route stays in the visible part. */
   bottomInset: number;
 }) {
@@ -86,8 +95,9 @@ export function RouteMap({ pickup, destination, bottomInset }: {
   useEffect(() => {
     const padding = { top: 90, left: 56, right: 56, bottom: bottomInset + 48 };
     if (pickup && destination) {
-      const lngs = [pickup.longitude, destination.longitude];
-      const lats = [pickup.latitude, destination.latitude];
+      const points = extra ? [pickup, destination, extra] : [pickup, destination];
+      const lngs = points.map((p) => p.longitude);
+      const lats = points.map((p) => p.latitude);
       camera.current?.fitBounds([Math.min(...lngs), Math.min(...lats), Math.max(...lngs), Math.max(...lats)], {
         padding,
         duration: 900,
@@ -96,7 +106,7 @@ export function RouteMap({ pickup, destination, bottomInset }: {
       const p = (pickup ?? destination)!;
       camera.current?.flyTo({ center: [p.longitude, p.latitude], zoom: 15, padding, duration: 1400 });
     }
-  }, [pickup, destination, bottomInset]);
+  }, [pickup, destination, extra, bottomInset]);
 
   const route = useMemo<GeoJSON.Feature | null>(
     () =>
@@ -132,11 +142,18 @@ export function RouteMap({ pickup, destination, bottomInset }: {
       <Camera ref={camera} initialViewState={{ center: INDIA, zoom: 3.6 }} />
       {route ? (
         <GeoJSONSource id="route" data={route}>
+          {/* the route is drawn like rail track: a pale bed under a solid maroon line */}
+          <Layer
+            id="route-casing"
+            type="line"
+            layout={{ 'line-cap': 'round', 'line-join': 'round' }}
+            paint={{ 'line-color': colors.card, 'line-width': 9 }}
+          />
           <Layer
             id="route-line"
             type="line"
             layout={{ 'line-cap': 'round', 'line-join': 'round' }}
-            paint={{ 'line-color': colors.ink, 'line-width': 3, 'line-dasharray': [0.1, 2] }}
+            paint={{ 'line-color': colors.route, 'line-width': 5 }}
           />
         </GeoJSONSource>
       ) : null}
@@ -147,9 +164,16 @@ export function RouteMap({ pickup, destination, bottomInset }: {
           </Appear>
         </Marker>
       ) : null}
+      {extra ? (
+        <Marker id="extra" lngLat={[extra.longitude, extra.latitude]} anchor="center">
+          <Appear key={`${extra.longitude},${extra.latitude}`} fromY={-8}>
+            <ExtraPin />
+          </Appear>
+        </Marker>
+      ) : null}
       {destination ? (
-        <Marker id="destination" lngLat={[destination.longitude, destination.latitude]} anchor="bottom">
-          <Appear key={`${destination.longitude},${destination.latitude}`} fromY={-14}>
+        <Marker id="destination" lngLat={[destination.longitude, destination.latitude]} anchor="center">
+          <Appear key={`${destination.longitude},${destination.latitude}`} fromY={-8}>
             <DropPin />
           </Appear>
         </Marker>
@@ -163,14 +187,18 @@ const styles = StyleSheet.create({
   ring: { position: 'absolute', width: 18, height: 18, borderRadius: 9 },
   dot: { width: 18, height: 18, borderRadius: 9, borderWidth: 3 },
   pin: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    borderBottomRightRadius: 3,
-    transform: [{ rotate: '45deg' }],
+    width: 24,
+    height: 24,
+    borderRadius: 4,
+    borderWidth: 3,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 6,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
   },
-  pinCore: { width: 9, height: 9, borderRadius: 4.5 },
+  pinCore: { width: 6, height: 6, borderRadius: 1 },
+  extra: { width: 20, height: 20, borderRadius: 4, borderWidth: 3, borderStyle: 'dashed' },
 });

@@ -1,7 +1,7 @@
 import { useRef, type ComponentRef } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useTheme } from '@/context/ThemeContext';
-import { type } from '@/theme/type';
+import { fonts, type } from '@/theme/type';
 
 type CodeFieldProps = {
   value: string;
@@ -28,8 +28,8 @@ export function CodeField({ value, onChange, length = 6, error }: CodeFieldProps
                 styles.box,
                 {
                   backgroundColor: colors.field,
-                  borderColor: error ? colors.danger : focused ? colors.accentText : colors.line,
-                  borderWidth: focused || error ? 2 : 1,
+                  borderColor: error ? colors.danger : focused ? colors.ink : colors.line,
+                  borderWidth: focused || error ? 2 : 1.5,
                 },
               ]}
             >
@@ -59,7 +59,7 @@ export function CodeField({ value, onChange, length = 6, error }: CodeFieldProps
 const styles = StyleSheet.create({
   wrap: { gap: 8 },
   boxes: { flexDirection: 'row', gap: 8 },
-  box: { flex: 1, height: 58, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  digit: { fontFamily: 'SchibstedGrotesk_700Bold', fontSize: 24 },
+  box: { flex: 1, height: 60, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  digit: { fontFamily: fonts.extrabold, fontSize: 26, lineHeight: 32 },
   hidden: { position: 'absolute', opacity: 0, height: 1, width: 1 },
 });

@@ -7,7 +7,7 @@ import { type } from '@/theme/type';
 type ButtonProps = {
   label: string;
   onPress: () => void;
-  /** primary: filled lime. ghost: outlined. text: no container, for low-emphasis links. */
+  /** primary: signal yellow, the screen's one "go". ghost: outlined. text: no container, for low-emphasis links. */
   variant?: 'primary' | 'ghost' | 'text';
   icon?: AndroidSymbol;
   /** A full-colour image instead of a tinted icon, e.g. a brand logo. */
@@ -20,7 +20,7 @@ export function Button({ label, onPress, variant = 'primary', icon, image, loadi
   const { colors } = useTheme();
   const primary = variant === 'primary';
   const inactive = disabled || loading;
-  const fg = primary ? colors.accentInk : variant === 'text' ? colors.accentText : colors.ink;
+  const fg = primary ? colors.accentInk : variant === 'text' ? colors.ink : colors.ink;
 
   return (
     <Pressable
@@ -29,21 +29,34 @@ export function Button({ label, onPress, variant = 'primary', icon, image, loadi
       accessibilityState={{ disabled: !!inactive, busy: !!loading }}
       disabled={inactive}
       onPress={onPress}
-      android_ripple={{ color: primary ? 'rgba(16,20,15,0.14)' : colors.line, borderless: false }}
+      android_ripple={{ color: primary ? 'rgba(17,17,17,0.14)' : colors.line, borderless: false }}
       style={({ pressed }) => [
         styles.button,
         variant === 'text' && styles.textButton,
-        primary && { backgroundColor: colors.accent },
-        variant === 'ghost' && { borderWidth: 1, borderColor: colors.line },
-        { opacity: inactive ? 0.45 : pressed ? 0.92 : 1 },
+        primary && { backgroundColor: inactive ? colors.line : colors.accent },
+        variant === 'ghost' && { borderWidth: 1.5, borderColor: colors.ink },
+        variant === 'ghost' && inactive && { borderColor: colors.line },
+        pressed && !inactive && styles.pressed,
       ]}
     >
       {loading ? (
         <ActivityIndicator color={fg} />
       ) : (
         <View style={styles.row}>
-          {image ? <Image source={image} style={styles.image} /> : icon ? <Icon name={icon} size={20} color={fg} /> : null}
-          <Text style={[type.label, styles.label, { color: fg }]}>{label}</Text>
+          {image ? (
+            <Image source={image} style={styles.image} />
+          ) : icon ? (
+            <Icon name={icon} size={20} color={inactive ? colors.muted : fg} />
+          ) : null}
+          <Text
+            style={[
+              variant === 'text' ? type.label : styles.label,
+              { color: inactive ? colors.muted : fg },
+              variant === 'text' && styles.underline,
+            ]}
+          >
+            {label}
+          </Text>
         </View>
       )}
     </Pressable>
@@ -52,7 +65,7 @@ export function Button({ label, onPress, variant = 'primary', icon, image, loadi
 
 const styles = StyleSheet.create({
   button: {
-    borderRadius: 16,
+    borderRadius: 12,
     minHeight: 56,
     paddingHorizontal: 20,
     alignItems: 'center',
@@ -60,7 +73,9 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   textButton: { minHeight: 48, paddingHorizontal: 12 },
+  pressed: { transform: [{ scale: 0.98 }] },
   row: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  label: { fontSize: 16 },
+  label: { ...type.title, fontSize: 17 },
+  underline: { textDecorationLine: 'underline' },
   image: { width: 20, height: 20 },
 });

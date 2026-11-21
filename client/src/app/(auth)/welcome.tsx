@@ -13,7 +13,7 @@ import { Screen } from '@/components/Screen';
 import { Button } from '@/components/Button';
 import { PaybackArt, SplitArt, VerifiedArt } from '@/components/WelcomeArt';
 import { useTheme } from '@/context/ThemeContext';
-import { type } from '@/theme/type';
+import { fonts, type } from '@/theme/type';
 
 const PAD = 24;
 
@@ -133,7 +133,7 @@ const styles = StyleSheet.create({
   screen: { paddingHorizontal: 0, gap: 0 },
   brand: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: PAD, paddingTop: 4 },
   mark: { width: 26, height: 26 },
-  wordmark: { ...type.title, fontFamily: 'SchibstedGrotesk_800ExtraBold', fontSize: 21, letterSpacing: -0.4 },
+  wordmark: { ...type.title, fontFamily: fonts.extrabold, fontSize: 21, letterSpacing: -0.4 },
   pager: { flex: 1 },
   slide: { flex: 1, paddingHorizontal: PAD, justifyContent: 'center', gap: 36 },
   art: { alignItems: 'center' },
