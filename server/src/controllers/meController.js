@@ -13,13 +13,33 @@ const getMe = (req, res) => {
   res.json({ success: true, data: toPublicMe(req.user) });
 };
 
+// handle@bank, e.g. riya.s@okhdfc
+const UPI_ID = /^[a-zA-Z0-9._-]{2,256}@[a-zA-Z][a-zA-Z0-9]{2,64}$/;
+
+// PATCH /api/me { firstName?, upiId? } — send upiId as "" to remove it
 const updateMe = async (req, res) => {
-  const firstName = typeof req.body?.firstName === 'string' ? req.body.firstName.trim() : '';
-  if (firstName.length < 1 || firstName.length > 50) {
-    return res.status(400).json({ success: false, message: 'Please enter a first name (up to 50 characters).' });
+  const { firstName, upiId } = req.body ?? {};
+  const data = {};
+
+  if (firstName !== undefined) {
+    const name = typeof firstName === 'string' ? firstName.trim() : '';
+    if (name.length < 1 || name.length > 50) {
+      return res.status(400).json({ success: false, message: 'Please enter a first name (up to 50 characters).' });
+    }
+    data.name = name;
   }
 
-  const user = await prisma.user.update({ where: { id: req.user.id }, data: { name: firstName } });
+  if (upiId !== undefined) {
+    const id = typeof upiId === 'string' ? upiId.trim().toLowerCase() : null;
+    if (id === null || (id && !UPI_ID.test(id))) {
+      return res.status(400).json({ success: false, message: 'That UPI ID doesn\'t look right. It looks like name@bank.' });
+    }
+    data.upiId = id || null;
+  }
+
+  if (!Object.keys(data).length) return res.status(400).json({ success: false, message: 'Nothing to update.' });
+
+  const user = await prisma.user.update({ where: { id: req.user.id }, data });
   res.json({ success: true, data: toPublicMe(user) });
 };
 
