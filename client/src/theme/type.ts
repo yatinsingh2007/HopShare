@@ -1,14 +1,14 @@
 import type { TextStyle } from 'react-native';
 
-// Mukta everywhere: a humanist sans from an Indian foundry, read like station signage.
+// Manrope everywhere: a compact geometric sans with clear figures for times and fares.
 // On Android a custom font ignores fontWeight (it fakes bold), so each weight is its own file:
 // pick the weight with fontFamily, never fontWeight.
 export const fonts = {
-  regular: 'Mukta_400Regular',
-  medium: 'Mukta_500Medium',
-  semibold: 'Mukta_600SemiBold',
-  bold: 'Mukta_700Bold',
-  extrabold: 'Mukta_800ExtraBold',
+  regular: 'Manrope_400Regular',
+  medium: 'Manrope_500Medium',
+  semibold: 'Manrope_600SemiBold',
+  bold: 'Manrope_700Bold',
+  extrabold: 'Manrope_800ExtraBold',
 };
 
 // Material 3 roles on a 4dp grid. Sizes are sp, so they follow the system font setting.
