@@ -1,5 +1,5 @@
 const { Router } = require('express');
-const { matchRides, createRide, myRides, getRide, markBooked } = require('../controllers/rideController');
+const { matchRides, createRide, myRides, getRide, markBooked, cancelRide, leaveRide } = require('../controllers/rideController');
 const { pickedUp, setFare, claimPayment, confirmPayment } = require('../controllers/fareController');
 const { startShare, stopShare } = require('../controllers/safetyController');
 const { listMessages, sendMessage } = require('../controllers/chatController');
@@ -20,6 +20,8 @@ router.get('/requests/mine', myRequests);
 router.get('/:id', getRide);
 router.post('/', createRide);
 router.post('/:id/booked', markBooked);
+router.post('/:id/cancel', cancelRide);
+router.post('/:id/leave', leaveRide);
 router.post('/:id/picked-up', pickedUp);
 router.get('/:id/messages', listMessages);
 router.post('/:id/messages', sendMessage);

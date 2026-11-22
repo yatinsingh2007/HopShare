@@ -145,7 +145,7 @@ const myRides = async (req, res) => {
       rideCreatorId: true,
       bookedAt: true,
       pickedUpAt: true,
-      endedAt: true,
+      endedAt: true, cancelledAt: true,
       farePaise: true,
       paymentStatus: true,
       // my share, if I owe the booker
@@ -189,7 +189,7 @@ const getRide = async (req, res) => {
       cabNumber: true,
       tripLink: true,
       pickedUpAt: true,
-      endedAt: true,
+      endedAt: true, cancelledAt: true,
       farePaise: true,
       paymentStatus: true,
       rideCreator: { select: { upiId: true } },
@@ -240,7 +240,7 @@ const getRide = async (req, res) => {
         : null,
       fare: ride.endedAt ? fareView(ride, members, req.user.id) : null,
       // am I sending a public live link for this ride?
-      sharingTrip: !ride.endedAt && ride.tripShares.length > 0,
+      sharingTrip: !ride.endedAt && !ride.cancelledAt && ride.tripShares.length > 0,
       // when the group chat last had a message, so the app can show a "new" dot
       lastMessageAt: ride.chat?.messages[0]?.createdAt ?? null,
     },
@@ -346,4 +346,88 @@ const markBooked = async (req, res) => {
   });
 };
 
-module.exports = { MAX_MEMBERS, TOO_FAR, tooFar, point, readPlace, activeRideOf, matchRides, createRide, myRides, getRide, markBooked };
+// the ride, if I'm in it, with what cancel and leave need
+const rideForMember = (rideId, userId) =>
+  prisma.ride.findFirst({
+    where: { id: rideId, users: { some: { id: userId } } },
+    select: {
+      id: true,
+      time: true,
+      bookedAt: true,
+      pickedUpAt: true,
+      endedAt: true,
+      cancelledAt: true,
+      rideCreatorId: true,
+      destinationName: true,
+      users: { select: { id: true } },
+    },
+  });
+
+// POST /api/rides/:id/cancel — the person who started the group calls it off, any time before pickup.
+// Everyone in it is told, waiting requests close, and live location and trip links stop.
+const cancelRide = async (req, res) => {
+  const ride = await rideForMember(req.params.id, req.user.id);
+  if (!ride) return res.status(404).json({ success: false, message: 'Ride not found.' });
+  if (ride.rideCreatorId !== req.user.id) {
+    return res.status(403).json({ success: false, message: 'Only the person who started the group can cancel it. You can leave it instead.' });
+  }
+  const stage = stageOf(ride);
+  if (stage !== 'open' && stage !== 'booked') {
+    return res.status(409).json({ success: false, message: 'This ride can no longer be cancelled.' });
+  }
+
+  const now = new Date();
+  const waiting = await prisma.joinRequest.findMany({ where: { rideId: ride.id, status: 'PENDING' }, select: { userId: true } });
+  await prisma.$transaction([
+    prisma.ride.update({ where: { id: ride.id }, data: { cancelledAt: now, joinable: false } }),
+    prisma.joinRequest.updateMany({ where: { rideId: ride.id, status: 'PENDING' }, data: { status: 'CANCELLED', respondedAt: now } }),
+    prisma.tripShare.updateMany({ where: { rideId: ride.id, stoppedAt: null }, data: { stoppedAt: now } }),
+  ]);
+
+  const who = req.user.name ?? 'The person who started it';
+  for (const { id } of ride.users.filter((u) => u.id !== req.user.id)) {
+    tell(id, 'ride:cancelled', { rideId: ride.id }, {
+      kind: 'ride_cancelled',
+      text: `${who} cancelled the ride to ${ride.destinationName}${ride.bookedAt ? '. If a cab was booked, they will cancel it' : ''}`,
+    });
+  }
+  for (const { userId } of waiting) {
+    tell(userId, 'request:answered', { rideId: ride.id, status: 'CANCELLED' }, {
+      kind: 'request_closed',
+      text: `The group to ${ride.destinationName} was cancelled, so your request was closed`,
+    });
+  }
+  rideChanged(ride.id);
+  res.json({ success: true, data: { cancelledAt: now } });
+};
+
+// POST /api/rides/:id/leave — a rider who joined drops out before pickup. The seat opens again if the
+// cab isn't booked yet; the person who started the group is told.
+const leaveRide = async (req, res) => {
+  const ride = await rideForMember(req.params.id, req.user.id);
+  if (!ride) return res.status(404).json({ success: false, message: 'Ride not found.' });
+  if (ride.rideCreatorId === req.user.id) {
+    return res.status(409).json({ success: false, message: 'You started this group, so cancel it instead.' });
+  }
+  const stage = stageOf(ride);
+  if (stage !== 'open' && stage !== 'booked') {
+    return res.status(409).json({ success: false, message: 'You can only leave before pickup.' });
+  }
+
+  const now = new Date();
+  await prisma.$transaction([
+    prisma.$executeRaw`DELETE FROM "_RideUsers" WHERE "A" = ${ride.id} AND "B" = ${req.user.id}`,
+    // a seat opens only while the group is still looking for riders
+    ...(ride.bookedAt ? [] : [prisma.ride.update({ where: { id: ride.id }, data: { joinable: true } })]),
+    prisma.tripShare.updateMany({ where: { rideId: ride.id, userId: req.user.id, stoppedAt: null }, data: { stoppedAt: now } }),
+  ]);
+
+  tell(ride.rideCreatorId, 'requests:updated', { rideId: ride.id }, {
+    kind: 'member_left',
+    text: `${req.user.name ?? 'A rider'} left your group to ${ride.destinationName}${ride.bookedAt ? '' : '. Their seat is open again'}`,
+  });
+  rideChanged(ride.id);
+  res.json({ success: true, data: { left: true } });
+};
+
+module.exports = { MAX_MEMBERS, TOO_FAR, tooFar, point, readPlace, activeRideOf, matchRides, createRide, myRides, getRide, markBooked, cancelRide, leaveRide };

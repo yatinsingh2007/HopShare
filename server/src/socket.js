@@ -22,7 +22,7 @@ const rideAccess = async (rideId) => {
       time: true,
       bookedAt: true,
       pickedUpAt: true,
-      endedAt: true,
+      endedAt: true, cancelledAt: true,
       users: { select: { id: true } },
       tripShares: { where: { stoppedAt: null, expiresAt: { gt: new Date() } }, select: { userId: true } },
     },

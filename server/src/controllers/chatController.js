@@ -21,7 +21,7 @@ const memberRide = (rideId, userId) =>
       time: true,
       bookedAt: true,
       pickedUpAt: true,
-      endedAt: true,
+      endedAt: true, cancelledAt: true,
       chat: { select: { id: true } },
       users: { select: { id: true } },
     },
