@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
@@ -317,6 +317,7 @@ export default function RideScreen() {
   useSocketEvent('ride:updated', changed);
   useSocketEvent('requests:updated', changed);
   useSocketEvent('payment:due', changed);
+  useSocketEvent('ride:cancelled', changed);
 
   const refresh = async () => {
     setRefreshing(true);
@@ -361,6 +362,42 @@ export default function RideScreen() {
     } catch (e) {
       return e instanceof ApiError ? e.message : 'Something went wrong. Please try again.';
     }
+  };
+
+  // cancel (person who started it) or leave (anyone else), before pickup, after a confirm
+  const [leaving, setLeaving] = useState(false);
+  const [leaveError, setLeaveError] = useState<string | null>(null);
+  const confirmLeave = () => {
+    if (!ride) return;
+    const cancel = ride.isCreator;
+    const others = ride.members.length - 1;
+    Alert.alert(
+      cancel ? 'Cancel this ride?' : 'Leave this group?',
+      cancel
+        ? `${others ? `The ${others === 1 ? 'other rider is' : `${others} others are`} told it's off.` : 'Nobody has joined yet.'}${ride.booking ? ' Cancel the cab in the cab app too.' : ''}`
+        : `${creator?.firstName ?? 'The person who started it'} is told you left.${ride.booking ? '' : ' Your seat opens up for someone else.'}`,
+      [
+        { text: 'Keep it', style: 'cancel' },
+        {
+          text: cancel ? 'Cancel ride' : 'Leave',
+          style: 'destructive',
+          onPress: async () => {
+            setLeaving(true);
+            setLeaveError(null);
+            try {
+              await request(`/api/rides/${id}/${cancel ? 'cancel' : 'leave'}`, { method: 'POST' });
+              // after leaving I'm no longer in the group, so this screen has nothing to show
+              if (cancel) await fetchRide();
+              else router.back();
+            } catch (e) {
+              setLeaveError(e instanceof ApiError ? e.message : 'Something went wrong. Please try again.');
+            } finally {
+              setLeaving(false);
+            }
+          },
+        },
+      ],
+    );
   };
 
   const mapHeight = Math.round(height * 0.36);
@@ -433,12 +470,12 @@ export default function RideScreen() {
               entering={FadeInDown.duration(280)}
               accessible
               accessibilityRole="header"
-              accessibilityLabel={`${ride.live ? 'Live' : ride.stage === 'ended' ? 'Finished' : 'Past'} group ${code}, leaves ${day(ride.leaveAt)} at ${clock(ride.leaveAt)}`}
+              accessibilityLabel={`${ride.live ? 'Live' : ride.stage === 'ended' ? 'Finished' : ride.stage === 'cancelled' ? 'Cancelled' : 'Past'} group ${code}, leaves ${day(ride.leaveAt)} at ${clock(ride.leaveAt)}`}
               style={[styles.plate, { backgroundColor: ride.live ? colors.coach : colors.card, borderColor: colors.line, borderWidth: ride.live ? 0 : 1.5 }]}
             >
               <View style={[styles.code, { backgroundColor: ride.live ? 'rgba(0,0,0,0.22)' : colors.bg }]}>
                 <Text style={[styles.codeText, { color: ride.live ? colors.accent : colors.ink }]}>{code}</Text>
-                <Text style={[type.meta, { color: ride.live ? soft : colors.muted }]}>{ride.live ? 'LIVE' : ride.stage === 'ended' ? 'DONE' : 'PAST'}</Text>
+                <Text style={[type.meta, { color: ride.live ? soft : colors.muted }]}>{ride.live ? 'LIVE' : ride.stage === 'ended' ? 'DONE' : ride.stage === 'cancelled' ? 'CANCELLED' : 'PAST'}</Text>
               </View>
               <View style={styles.flex}>
                 <Text style={[type.bodySmall, { color: ride.live ? soft : colors.muted }]}>{day(ride.leaveAt)} · leaves at</Text>
@@ -448,7 +485,23 @@ export default function RideScreen() {
               </View>
             </Animated.View>
 
-            {myPayment && myPayment.status === 'PENDING' && !myPayment.claimedAt ? (
+            {ride.stage === 'cancelled' ? (
+              <Animated.View
+                entering={FadeIn.duration(220)}
+                accessible
+                accessibilityLabel={`This ride was cancelled${ride.isCreator ? '' : ` by ${creator?.firstName ?? 'the person who started it'}`}`}
+                style={[styles.card, styles.cancelled, { backgroundColor: colors.card, borderColor: colors.danger }]}
+              >
+                <Icon name="close" size={22} color={colors.danger} />
+                <View style={styles.flex}>
+                  <Text style={[type.title, { color: colors.ink }]}>Ride cancelled</Text>
+                  <Text style={[type.bodySmall, { color: colors.muted }]}>
+                    {ride.isCreator ? 'You called it off.' : `${creator?.firstName ?? 'The person who started it'} called it off.`} Find another
+                    group from Home.
+                  </Text>
+                </View>
+              </Animated.View>
+            ) : myPayment && myPayment.status === 'PENDING' && !myPayment.claimedAt ? (
               <SignBand
                 icon="currency_rupee"
                 title={`Pay ${creator?.firstName ?? 'the booker'} ${rupees(myPayment.amountPaise)}`}
@@ -563,6 +616,25 @@ export default function RideScreen() {
                 onConfirm={(paymentId) => act(`payments/${paymentId}/confirm`)}
               />
             ) : null}
+
+            {ride.stage === 'open' || ride.stage === 'booked' ? (
+              <Animated.View entering={FadeInDown.delay(240).duration(260)} style={styles.section}>
+                <Text style={[type.title, { color: colors.ink }]}>Change of plans</Text>
+                <Text style={[type.bodySmall, { color: colors.muted }]}>
+                  {ride.isCreator
+                    ? 'Cancelling tells everyone in the group and closes any waiting requests.'
+                    : `Leaving tells ${creator?.firstName ?? 'the person who started it'}. You can only leave before pickup.`}
+                </Text>
+                {leaveError ? <Text style={[type.body, { color: colors.danger }]}>{leaveError}</Text> : null}
+                <Button
+                  label={ride.isCreator ? 'Cancel ride' : 'Leave group'}
+                  variant="ghost"
+                  icon={ride.isCreator ? 'close' : 'logout'}
+                  loading={leaving}
+                  onPress={confirmLeave}
+                />
+              </Animated.View>
+            ) : null}
           </ScrollView>
 
           {back}
@@ -617,6 +689,7 @@ const styles = StyleSheet.create({
   open: { borderWidth: 1.5, borderStyle: 'dashed' },
   request: { gap: 14 },
   skeletonStops: { padding: 16, gap: 10 },
+  cancelled: { flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 2 },
   chat: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   chatIcon: { width: 40, height: 40, borderRadius: 6, alignItems: 'center', justifyContent: 'center' },
   newDot: { width: 12, height: 12, borderRadius: 6, borderWidth: 2 },

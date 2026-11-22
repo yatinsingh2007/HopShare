@@ -193,6 +193,7 @@ stateDiagram-v2
 - Each rider taps **I'm in the cab** at pickup. Anyone not checked in when the booker marks pickup (after about 5 minutes of waiting) is a **no-show**: left out of the split, given a reliability mark, and able to dispute it.
 - A group that never fills can still ride with 2–3 people; the split adjusts.
 - A user can be in only one active group at a time.
+- **Calling it off (built):** before pickup, the person who started the group can **Cancel ride** (`POST /api/rides/:id/cancel`): everyone is told, waiting requests close, live location and trip links stop. Anyone else can **Leave group** (`POST /api/rides/:id/leave`): the person who started it is told, and the seat opens again if the cab isn't booked yet.
 
 ## 3. App screens
 

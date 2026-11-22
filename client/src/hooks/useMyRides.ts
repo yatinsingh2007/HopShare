@@ -4,7 +4,7 @@ import { useSession } from '@/context/AuthContext';
 import { useSocketEvent } from '@/context/SocketContext';
 import { ApiError } from '@/services/api';
 
-export type RideStage = 'open' | 'booked' | 'picked_up' | 'ended' | 'past';
+export type RideStage = 'open' | 'booked' | 'picked_up' | 'ended' | 'cancelled' | 'past';
 export type MyRide = {
   id: string;
   pickupName: string;
@@ -45,6 +45,7 @@ export function useMyRides() {
   );
   useSocketEvent('request:answered', reload);
   useSocketEvent('payment:due', reload);
+  useSocketEvent('ride:cancelled', reload);
 
   return { rides, error, reload, liveRide: rides?.find((r) => r.live) ?? null };
 }

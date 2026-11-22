@@ -51,7 +51,7 @@ export function RideCard({ ride, index = 0 }: { ride: MyRide; index?: number }) 
   const fg = live ? colors.coachInk : colors.ink;
   const soft = live ? 'rgba(255,255,255,0.78)' : colors.muted;
   const code = groupCode(ride.id);
-  const badge = live ? 'LIVE' : ride.stage === 'ended' ? 'DONE' : 'PAST';
+  const badge = live ? 'LIVE' : ride.stage === 'ended' ? 'DONE' : ride.stage === 'cancelled' ? 'CANCELLED' : 'PAST';
   // after the ride: the fare and where my money stands
   const money =
     ride.stage === 'ended' && ride.farePaise !== null
@@ -77,7 +77,7 @@ export function RideCard({ ride, index = 0 }: { ride: MyRide; index?: number }) 
       <Pressable
         onPress={() => router.push({ pathname: '/ride/[id]', params: { id: ride.id } })}
         accessibilityRole="button"
-        accessibilityLabel={`${live ? 'Live' : ride.stage === 'ended' ? 'Finished' : 'Past'} ride ${code},${money ? ` ${money}.` : ''} ${ride.isCreator ? 'you started it' : 'you joined'}. ${ride.pickupName} to ${ride.destinationName}, ${dayLabel(ride.leaveAt)} ${clock(ride.leaveAt)}. ${ride.members} of ${SEATS} riders. Open`}
+        accessibilityLabel={`${live ? 'Live' : ride.stage === 'ended' ? 'Finished' : ride.stage === 'cancelled' ? 'Cancelled' : 'Past'} ride ${code},${money ? ` ${money}.` : ''} ${ride.isCreator ? 'you started it' : 'you joined'}. ${ride.pickupName} to ${ride.destinationName}, ${dayLabel(ride.leaveAt)} ${clock(ride.leaveAt)}. ${ride.members} of ${SEATS} riders. Open`}
         android_ripple={{ color: live ? 'rgba(255,255,255,0.12)' : colors.line }}
         style={({ pressed }) => [
           styles.card,
@@ -89,7 +89,7 @@ export function RideCard({ ride, index = 0 }: { ride: MyRide; index?: number }) 
       >
         <View style={[styles.code, { backgroundColor: live ? 'rgba(0,0,0,0.22)' : colors.bg }]}>
           <Text style={[styles.codeText, { color: live ? colors.accent : colors.ink }]}>{code}</Text>
-          <Text style={[type.meta, { color: soft }]}>{badge}</Text>
+          <Text style={[type.meta, { color: soft }]} numberOfLines={1} adjustsFontSizeToFit>{badge}</Text>
         </View>
 
         <View style={styles.flex}>
