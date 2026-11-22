@@ -1,0 +1,129 @@
+const prisma = require('../config/db');
+const { emitToUser, rideChanged } = require('../socket');
+const { stageOf } = require('../rideState');
+
+const MAX_FARE_RUPEES = 20_000;
+
+const notFound = (res) => res.status(404).json({ success: false, message: 'Ride not found.' });
+const refuse = (res, status, message) => res.status(status).json({ success: false, message });
+
+// the ride, if the caller is in it
+const rideFor = (rideId, userId) =>
+  prisma.ride.findFirst({
+    where: { id: rideId, users: { some: { id: userId } } },
+    select: {
+      id: true,
+      time: true,
+      bookedAt: true,
+      pickedUpAt: true,
+      endedAt: true,
+      rideCreatorId: true,
+      rideCreator: { select: { name: true, upiId: true } },
+      users: { select: { id: true } },
+    },
+  });
+
+// POST /api/rides/:id/picked-up — the booker says everyone is in the cab; location sharing stops
+const pickedUp = async (req, res) => {
+  const ride = await rideFor(req.params.id, req.user.id);
+  if (!ride) return notFound(res);
+  if (ride.rideCreatorId !== req.user.id) return refuse(res, 403, 'Only the booker marks the pickup.');
+  if (stageOf(ride) !== 'booked') return refuse(res, 409, 'Book the cab first, or this ride has already moved on.');
+
+  const pickedUpAt = new Date();
+  await prisma.ride.update({ where: { id: ride.id }, data: { pickedUpAt } });
+  rideChanged(ride.id);
+  res.json({ success: true, data: { pickedUpAt } });
+};
+
+// POST /api/rides/:id/fare { fare, riderIds? } — "We've arrived". fare is in rupees; riderIds are the members
+// who rode (default: everyone), so no-shows are left out. Split evenly in paise; leftover paise stay with the booker.
+const setFare = async (req, res) => {
+  const fare = Number(req.body?.fare);
+  if (!Number.isFinite(fare) || fare <= 0 || fare > MAX_FARE_RUPEES) {
+    return refuse(res, 400, `Enter the fare you paid, up to ₹${MAX_FARE_RUPEES.toLocaleString('en-IN')}.`);
+  }
+  const riderIds = req.body?.riderIds;
+  if (riderIds !== undefined && (!Array.isArray(riderIds) || riderIds.some((id) => typeof id !== 'string'))) {
+    return refuse(res, 400, 'Pick who rode with you.');
+  }
+
+  const ride = await rideFor(req.params.id, req.user.id);
+  if (!ride) return notFound(res);
+  if (ride.rideCreatorId !== req.user.id) return refuse(res, 403, 'Only the booker enters the fare.');
+  const stage = stageOf(ride);
+  if (stage === 'open') return refuse(res, 409, 'Book the cab first.');
+  if (stage === 'ended') return refuse(res, 409, 'The fare is already in.');
+  if (stage === 'past') return refuse(res, 409, 'This ride is over.');
+  if (!ride.rideCreator.upiId) return refuse(res, 409, 'Add your UPI ID on your profile first, so the others can pay you.');
+
+  const others = ride.users.map((u) => u.id).filter((id) => id !== req.user.id);
+  const payers = riderIds ? others.filter((id) => riderIds.includes(id)) : others;
+  const farePaise = Math.round(fare * 100);
+  const sharePaise = Math.floor(farePaise / (payers.length + 1));
+  const now = new Date();
+
+  await prisma.$transaction([
+    prisma.ride.update({
+      where: { id: ride.id },
+      data: {
+        endedAt: now,
+        pickedUpAt: ride.pickedUpAt ?? now,
+        farePaise,
+        // nobody to pay back: already settled
+        paymentStatus: payers.length ? 'PENDING' : 'PAID',
+      },
+    }),
+    prisma.payment.createMany({
+      data: payers.map((fromId) => ({ fromId, toId: req.user.id, rideId: ride.id, amountPaise: sharePaise })),
+    }),
+  ]);
+
+  for (const userId of payers) {
+    emitToUser(userId, 'payment:due', { rideId: ride.id, amountPaise: sharePaise, bookerName: ride.rideCreator.name });
+  }
+  rideChanged(ride.id);
+  res.json({ success: true, data: { farePaise, sharePaise, riders: payers.length + 1 } });
+};
+
+// POST /api/rides/:id/payments/:paymentId/claim — the rider says they've paid over UPI
+const claimPayment = async (req, res) => {
+  const { count } = await prisma.payment.updateMany({
+    where: { id: req.params.paymentId, rideId: req.params.id, fromId: req.user.id, status: 'PENDING', claimedAt: null },
+    data: { claimedAt: new Date() },
+  });
+  const payment = await prisma.payment.findFirst({
+    where: { id: req.params.paymentId, rideId: req.params.id, fromId: req.user.id },
+    select: { toId: true, amountPaise: true },
+  });
+  if (!payment) return refuse(res, 404, 'Payment not found.');
+  if (!count) return refuse(res, 409, 'This payment is already marked.');
+
+  emitToUser(payment.toId, 'payment:claimed', { rideId: req.params.id, firstName: req.user.name, amountPaise: payment.amountPaise });
+  rideChanged(req.params.id);
+  res.json({ success: true, data: { id: req.params.paymentId, claimed: true } });
+};
+
+// POST /api/rides/:id/payments/:paymentId/confirm — the booker got the money; when all are in, the ride is settled
+const confirmPayment = async (req, res) => {
+  const rideId = req.params.id;
+  const settled = await prisma.$transaction(async (tx) => {
+    const { count } = await tx.payment.updateMany({
+      where: { id: req.params.paymentId, rideId, toId: req.user.id, status: 'PENDING' },
+      data: { status: 'PAID' },
+    });
+    if (!count) return null;
+    const left = await tx.payment.count({ where: { rideId, status: 'PENDING' } });
+    if (!left) await tx.ride.update({ where: { id: rideId }, data: { paymentStatus: 'PAID' } });
+    return !left;
+  });
+  if (settled === null) {
+    const exists = await prisma.payment.count({ where: { id: req.params.paymentId, rideId, toId: req.user.id } });
+    return exists ? refuse(res, 409, 'This payment is already confirmed.') : refuse(res, 404, 'Payment not found.');
+  }
+
+  rideChanged(rideId);
+  res.json({ success: true, data: { id: req.params.paymentId, status: 'PAID', settled } });
+};
+
+module.exports = { pickedUp, setFare, claimPayment, confirmPayment };

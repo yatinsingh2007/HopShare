@@ -1,5 +1,6 @@
 const { Router } = require('express');
 const { matchRides, createRide, myRides, getRide, markBooked } = require('../controllers/rideController');
+const { pickedUp, setFare, claimPayment, confirmPayment } = require('../controllers/fareController');
 const {
   requestToJoin,
   listRequests,
@@ -17,6 +18,10 @@ router.get('/requests/mine', myRequests);
 router.get('/:id', getRide);
 router.post('/', createRide);
 router.post('/:id/booked', markBooked);
+router.post('/:id/picked-up', pickedUp);
+router.post('/:id/fare', setFare);
+router.post('/:id/payments/:paymentId/claim', claimPayment);
+router.post('/:id/payments/:paymentId/confirm', confirmPayment);
 router.post('/:id/requests', requestToJoin);
 router.get('/:id/requests', listRequests);
 router.post('/:id/requests/:requestId/accept', acceptRequest);

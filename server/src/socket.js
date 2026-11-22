@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const { Server } = require('socket.io');
 const prisma = require('./config/db');
+const { stageOf } = require('./rideState');
 
 // Live state lives here, in memory, while we run one server (README section 8).
 // Moving to Redis later touches only this file.
@@ -11,20 +12,18 @@ const access = new Map(); // rideId -> { members: Set<userId>, sharing, until }
 
 let io = null;
 
-const isLive = (time) => time.getTime() > Date.now() - 5 * 60_000;
-
 // who is in a ride and whether they share location now; cached briefly so location updates don't hit the DB
 const rideAccess = async (rideId) => {
   const cached = access.get(rideId);
   if (cached && cached.until > Date.now()) return cached;
   const ride = await prisma.ride.findUnique({
     where: { id: rideId },
-    select: { time: true, bookedAt: true, users: { select: { id: true } } },
+    select: { time: true, bookedAt: true, pickedUpAt: true, endedAt: true, users: { select: { id: true } } },
   });
   const entry = {
     members: new Set(ride?.users.map((u) => u.id) ?? []),
-    // from "cab booked" until the ride has left
-    sharing: !!ride?.bookedAt && isLive(ride.time),
+    // from "cab booked" until "picked up"
+    sharing: !!ride && stageOf(ride) === 'booked',
     until: Date.now() + ACCESS_TTL,
   };
   access.set(rideId, entry);
