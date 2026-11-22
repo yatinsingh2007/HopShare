@@ -26,7 +26,9 @@ const STYLES = {
 const INDIA: [number, number] = [78.9629, 22.5937];
 
 // Expo Go has no MapLibre native code: there the map is drawn in a WebView instead.
-const hasMapLibre = TurboModuleRegistry.get('MLRNCameraModule') != null;
+// The release build also loads every screen in Node (react-native-web) to make its route manifest,
+// where TurboModuleRegistry doesn't exist, so a missing registry counts as "no MapLibre".
+const hasMapLibre = TurboModuleRegistry?.get?.('MLRNCameraModule') != null;
 const MapLibre: typeof import('@maplibre/maplibre-react-native') | null = !hasMapLibre
   ? null
   : require('@maplibre/maplibre-react-native'); // eslint-disable-line @typescript-eslint/no-require-imports
