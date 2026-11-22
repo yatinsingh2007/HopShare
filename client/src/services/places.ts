@@ -35,7 +35,7 @@ const toResult = ({ geometry, properties: p }: PhotonFeature): PlaceResult => {
 
 export async function searchPlaces(q: string, near: Place | null, signal?: AbortSignal) {
   const bias = near ? `&lat=${near.latitude}&lon=${near.longitude}` : '';
-  const res = await fetch(`${PHOTON}/api/?q=${encodeURIComponent(q)}&limit=6&lang=en${bias}`, { signal, headers: PHOTON_HEADERS });
+  const res = await fetch(`${PHOTON}/api/?q=${encodeURIComponent(q)}&limit=10&lang=en${bias}`, { signal, headers: PHOTON_HEADERS });
   if (!res.ok) throw new Error('Search is unavailable right now.');
   const { features } = (await res.json()) as { features: PhotonFeature[] };
   return features.map(toResult);
@@ -47,13 +47,18 @@ const STATION_TAGS = ['railway:station', 'railway:halt', 'railway:subway_entranc
 const STATION_WORDS = ['station', 'metro', 'junction'];
 const stationName = (name: string) => name.replace(/\s*(metro\s+)?(station\s+)?(gate|exit|entry|entrance|lift)\b.*$/i, '').trim();
 
-const kmBetween = (a: Place, b: Place) => {
+export const kmBetween = (a: Place, b: Place) => {
   const rad = (d: number) => (d * Math.PI) / 180;
   const h =
     Math.sin(rad(b.latitude - a.latitude) / 2) ** 2 +
     Math.cos(rad(a.latitude)) * Math.cos(rad(b.latitude)) * Math.sin(rad(b.longitude - a.longitude) / 2) ** 2;
   return 2 * 6371 * Math.asin(Math.sqrt(h));
 };
+
+// HopShare is for shared city cabs: a ride's drop can be at most this far (straight line) from its pickup.
+// The server enforces the same limit.
+export const MAX_RIDE_KM = 70;
+export const inRideRange = (a: Place | null, b: Place | null) => !a || !b || kmBetween(a, b) <= MAX_RIDE_KM;
 
 // Straight-line distance as "850 m" or "3.4 km".
 const formatKm = (km: number) => (km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`);

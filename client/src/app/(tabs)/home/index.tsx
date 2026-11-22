@@ -38,6 +38,8 @@ import { useMyRides } from '@/hooks/useMyRides';
 import {
   distanceBetween,
   getRecentDestinations,
+  inRideRange,
+  MAX_RIDE_KM,
   nearbyStations,
   nameForPoint,
   saveRecentDestination,
@@ -263,7 +265,7 @@ export default function Home() {
   };
 
   const findRiders = async () => {
-    if (!pickup || !destination) return;
+    if (!pickup || !destination || !inRideRange(pickup, destination)) return;
     // "Current location" means nothing to other riders, so send the street we found for the GPS point.
     const place = ({ id, latitude, longitude, name, detail }: PlaceResult) =>
       JSON.stringify({
@@ -297,6 +299,11 @@ export default function Home() {
   const destinationDetail = destination && !destination.detail.endsWith(' away') ? destination.detail : '';
   // How far the destination is from the pickup, worked out fresh so it follows pickup changes.
   const distance = pickup && destination ? distanceBetween(pickup, destination) : null;
+  const tooFar = !inRideRange(pickup, destination);
+  // when picking one end, only offer places within range of the other end
+  const otherEnd = active === 'pickup' ? destination : pickup;
+  const shownResults = results.filter((p) => inRideRange(otherEnd, p));
+  const nearRecent = recent.filter((p) => inRideRange(pickup, p));
 
   const renderField = (field: Field) => {
     const editing = active === field;
@@ -356,10 +363,16 @@ export default function Home() {
   const suggestions = () => {
     if (searchError) return <Text style={[type.bodySmall, styles.note, { color: colors.danger }]}>{searchError}</Text>;
     if (query.trim().length >= 2) {
-      if (!searching && results.length === 0) {
-        return <Text style={[type.bodySmall, styles.note, { color: colors.muted }]}>No places match “{query.trim()}”.</Text>;
+      if (!searching && shownResults.length === 0) {
+        return (
+          <Text style={[type.bodySmall, styles.note, { color: colors.muted }]}>
+            {results.length
+              ? `Rides go up to ${MAX_RIDE_KM} km. No places match “${query.trim()}” within ${MAX_RIDE_KM} km of your ${active === 'pickup' ? 'destination' : 'pickup'}.`
+              : `No places match “${query.trim()}”.`}
+          </Text>
+        );
       }
-      return results.map((p, i) => <PlaceRow key={p.id} index={i} icon="location_on" place={p} onPress={() => choose(p)} />);
+      return shownResults.map((p, i) => <PlaceRow key={p.id} index={i} icon="location_on" place={p} onPress={() => choose(p)} />);
     }
     if (active === 'pickup') {
       return (
@@ -381,10 +394,10 @@ export default function Home() {
     }
     return (
       <>
-        {recent.length ? (
+        {nearRecent.length ? (
           <>
             <Text style={[type.label, styles.listLabel, { color: colors.muted }]}>Recent</Text>
-            {recent.map((p, i) => (
+            {nearRecent.map((p, i) => (
               <PlaceRow key={p.id} index={i} icon="history" place={p} onPress={() => choose(p)} />
             ))}
           </>
@@ -396,7 +409,7 @@ export default function Home() {
           [0, 1, 2].map((i) => <PlaceRowSkeleton key={i} index={i} />)
         ) : (
           stations.map((p, i) => (
-            <PlaceRow key={p.id} index={recent.length + i} icon="train" place={p} onPress={() => choose(p)} />
+            <PlaceRow key={p.id} index={nearRecent.length + i} icon="train" place={p} onPress={() => choose(p)} />
           ))
         )}
       </>
@@ -506,9 +519,9 @@ export default function Home() {
                   <LeavingChips value={leaveIn} onChange={setLeaveIn} />
                   <View style={styles.section}>
                     <Text style={[type.title, { color: colors.ink }]}>Recent</Text>
-                    {recent.length ? (
+                    {nearRecent.length ? (
                       <View style={styles.list}>
-                        {recent.map((p, i) => (
+                        {nearRecent.map((p, i) => (
                           <PlaceRow key={p.id} index={i} icon="history" place={p} onPress={() => setDestination(p)} />
                         ))}
                       </View>
@@ -527,11 +540,20 @@ export default function Home() {
             pointerEvents={active ? 'none' : 'auto'}
             style={[styles.footer, { backgroundColor: colors.bg, borderTopColor: colors.line }, footerStyle]}
           >
+            {tooFar ? (
+              <Animated.Text
+                entering={FadeIn.duration(160)}
+                accessibilityLiveRegion="polite"
+                style={[type.bodySmall, styles.tooFar, { color: colors.danger }]}
+              >
+                {distance} is too far. Rides go up to {MAX_RIDE_KM} km, so pick a closer destination.
+              </Animated.Text>
+            ) : null}
             <Button
               label="Find riders"
               icon="group"
               onPress={findRiders}
-              disabled={!pickup || !destination}
+              disabled={!pickup || !destination || tooFar}
             />
           </Animated.View>
         </>
@@ -543,6 +565,7 @@ export default function Home() {
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   pressed: { transform: [{ scale: 0.97 }] },
+  tooFar: { marginBottom: 8 },
   locate: { position: 'absolute', right: 16 },
   locateButton: {
     width: 52,

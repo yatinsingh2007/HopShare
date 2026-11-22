@@ -8,6 +8,18 @@ const MATCH_METRES = 1000;
 const WINDOW_MINUTES = 15;
 const MAX_LEAD_MINUTES = 120;
 const MAX_MEMBERS = 4;
+// shared city cabs: the drop can be at most 70 km (straight line) from the pickup; the app filters the same way
+const MAX_RIDE_KM = 70;
+const TOO_FAR = `Rides go up to ${MAX_RIDE_KM} km. Pick a destination closer to your pickup.`;
+
+const kmBetween = (a, b) => {
+  const rad = (d) => (d * Math.PI) / 180;
+  const h =
+    Math.sin(rad(b.latitude - a.latitude) / 2) ** 2 +
+    Math.cos(rad(a.latitude)) * Math.cos(rad(b.latitude)) * Math.sin(rad(b.longitude - a.longitude) / 2) ** 2;
+  return 2 * 6371 * Math.asin(Math.sqrt(h));
+};
+const tooFar = (a, b) => kmBetween(a, b) > MAX_RIDE_KM;
 
 // PostGIS wants [lon, lat]
 const point = ({ longitude, latitude }) =>
@@ -45,6 +57,7 @@ const matchRides = async (req, res) => {
   const drop = readPlace({ latitude: dropLat, longitude: dropLon });
   const leaveAt = readLeaveAt(leaveAtParam);
   if (!pickup || !drop) return res.status(400).json({ success: false, message: 'Pickup and destination are needed.' });
+  if (tooFar(pickup, drop)) return res.status(400).json({ success: false, message: TOO_FAR });
   if (!leaveAt) return res.status(400).json({ success: false, message: 'Leaving time must be within the next 2 hours.' });
 
   const from = new Date(leaveAt.getTime() - WINDOW_MINUTES * 60_000);
@@ -99,6 +112,7 @@ const createRide = async (req, res) => {
   if (!pickup?.name || !destination?.name) {
     return res.status(400).json({ success: false, message: 'Pickup and destination are needed.' });
   }
+  if (tooFar(pickup, destination)) return res.status(400).json({ success: false, message: TOO_FAR });
   if (!leaveAt) return res.status(400).json({ success: false, message: 'Leaving time must be within the next 2 hours.' });
 
   const active = await activeRideOf(req.user.id);
@@ -329,4 +343,4 @@ const markBooked = async (req, res) => {
   });
 };
 
-module.exports = { MAX_MEMBERS, point, readPlace, activeRideOf, matchRides, createRide, myRides, getRide, markBooked };
+module.exports = { MAX_MEMBERS, TOO_FAR, tooFar, point, readPlace, activeRideOf, matchRides, createRide, myRides, getRide, markBooked };
