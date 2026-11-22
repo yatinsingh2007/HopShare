@@ -19,6 +19,8 @@ const ICONS: Record<string, AndroidSymbol> = {
   payment_due: 'currency_rupee',
   payment_claimed: 'currency_rupee',
   payment_confirmed: 'check_circle',
+  ride_cancelled: 'close',
+  member_left: 'logout',
 };
 
 const ago = (iso: string) => {

@@ -18,7 +18,7 @@ const rideFor = (rideId, userId) =>
       time: true,
       bookedAt: true,
       pickedUpAt: true,
-      endedAt: true,
+      endedAt: true, cancelledAt: true,
       rideCreatorId: true,
       destinationName: true,
       rideCreator: { select: { name: true, upiId: true } },
@@ -149,7 +149,7 @@ const myPayments = async (req, res) => {
     status: true,
     claimedAt: true,
     createdAt: true,
-    ride: { select: { destinationName: true, endedAt: true } },
+    ride: { select: { destinationName: true, endedAt: true, cancelledAt: true } },
   };
   const [owe, owed] = await Promise.all([
     prisma.payment.findMany({

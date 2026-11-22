@@ -11,7 +11,7 @@ import { useMe } from '@/hooks/useMe';
 import { payByUpi, rupees } from '@/services/upi';
 import { fonts, type } from '@/theme/type';
 
-export type Stage = 'open' | 'booked' | 'picked_up' | 'ended' | 'past';
+export type Stage = 'open' | 'booked' | 'picked_up' | 'ended' | 'cancelled' | 'past';
 export type FarePayment = {
   id: string;
   userId: string;

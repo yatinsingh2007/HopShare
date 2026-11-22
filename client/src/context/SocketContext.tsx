@@ -3,7 +3,7 @@ import { io, type Socket } from 'socket.io-client';
 import { useSession } from '@/context/AuthContext';
 import { API_URL } from '@/services/api';
 import { isChatOpen } from '@/services/chatSeen';
-import { notifyAccepted, notifyChat, notifyJoinRequest, notifyPaymentClaimed, notifyPaymentDue } from '@/services/notifications';
+import { notifyAccepted, notifyChat, notifyRideCancelled, notifyJoinRequest, notifyPaymentClaimed, notifyPaymentDue } from '@/services/notifications';
 
 const SocketContext = createContext<Socket | null>(null);
 
@@ -58,6 +58,7 @@ export function SocketProvider({ children }: { children: ReactNode }) {
 
     socket.on('connect', onConnect);
     socket.on('chat:message', onChat);
+    socket.on('ride:cancelled', notifyRideCancelled);
     socket.on('payment:due', onDue);
     socket.on('payment:claimed', onClaimed);
     socket.on('connect_error', onError);
@@ -67,6 +68,7 @@ export function SocketProvider({ children }: { children: ReactNode }) {
     return () => {
       socket.off('connect', onConnect);
       socket.off('chat:message', onChat);
+      socket.off('ride:cancelled', notifyRideCancelled);
       socket.off('payment:due', onDue);
       socket.off('payment:claimed', onClaimed);
       socket.off('connect_error', onError);

@@ -85,7 +85,7 @@ const ensureShare = async (ride, userId) => {
 const memberRide = (rideId, userId) =>
   prisma.ride.findFirst({
     where: { id: rideId, users: { some: { id: userId } } },
-    select: { id: true, time: true, bookedAt: true, pickedUpAt: true, endedAt: true },
+    select: { id: true, time: true, bookedAt: true, pickedUpAt: true, endedAt: true, cancelledAt: true },
   });
 
 // POST /api/rides/:id/share — start a public live link for my trip
@@ -128,11 +128,11 @@ const publicTrip = async (req, res) => {
       expiresAt: true,
       stoppedAt: true,
       user: { select: { name: true } },
-      ride: { select: { destinationName: true, cabNumber: true, endedAt: true } },
+      ride: { select: { destinationName: true, cabNumber: true, endedAt: true, cancelledAt: true } },
     },
   });
   if (!share) return refuse(res, 404, 'This link is not valid.');
-  const active = !share.stoppedAt && !share.ride.endedAt && share.expiresAt > new Date();
+  const active = !share.stoppedAt && !share.ride.endedAt && !share.ride.cancelledAt && share.expiresAt > new Date();
   const position = active ? positionOf(share.rideId, share.userId) : null;
   res.json({
     success: true,

@@ -95,3 +95,7 @@ export const notifyPaymentClaimed = (amountPaise: number, firstName: string | nu
 /** A group chat message, while the app is open but that chat isn't. */
 export const notifyChat = (firstName: string | null, content: string) =>
   notify(firstName ?? 'Your group', content.length > 120 ? `${content.slice(0, 117)}…` : content);
+
+/** The person who started my group called it off. */
+export const notifyRideCancelled = () =>
+  notify('Your ride was cancelled', 'The group called it off. Open HopShare to find another one.');

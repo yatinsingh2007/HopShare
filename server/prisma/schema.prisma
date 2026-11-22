@@ -74,6 +74,8 @@ model Ride {
   // The booker taps "Picked up" (location sharing stops), then "We've arrived" with the fare
   pickedUpAt      DateTime?
   endedAt         DateTime?
+  // the person who started it called it off before pickup
+  cancelledAt     DateTime?
   // What the booker paid, in paise
   farePaise       Int?
 
