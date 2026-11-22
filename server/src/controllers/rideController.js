@@ -8,7 +8,9 @@ const MATCH_METRES = 1000;
 const WINDOW_MINUTES = 15;
 const MAX_LEAD_MINUTES = 120;
 const MAX_MEMBERS = 4;
-// shared city cabs: the drop can be at most 70 km (straight line) from the pickup; the app filters the same way
+// shared city cabs: the drop must be 1–70 km (straight line) from the pickup; the app checks the same way.
+// Under 1 km is walking distance, so there's nothing to share.
+const MIN_RIDE_KM = 1;
 const MAX_RIDE_KM = 70;
 const TOO_FAR = `Rides go up to ${MAX_RIDE_KM} km. Pick a destination closer to your pickup.`;
 
@@ -19,7 +21,14 @@ const kmBetween = (a, b) => {
     Math.cos(rad(a.latitude)) * Math.cos(rad(b.latitude)) * Math.sin(rad(b.longitude - a.longitude) / 2) ** 2;
   return 2 * 6371 * Math.asin(Math.sqrt(h));
 };
-const tooFar = (a, b) => kmBetween(a, b) > MAX_RIDE_KM;
+// null when the distance is fine, otherwise the message to show
+const rideDistanceError = (a, b) => {
+  const km = kmBetween(a, b);
+  if (km < MIN_RIDE_KM) {
+    return `Your destination is only ${Math.max(10, Math.round(km * 100) * 10)} m from your pickup. That's walking distance, so rides start from ${MIN_RIDE_KM} km.`;
+  }
+  return km > MAX_RIDE_KM ? TOO_FAR : null;
+};
 
 // PostGIS wants [lon, lat]
 const point = ({ longitude, latitude }) =>
@@ -57,7 +66,8 @@ const matchRides = async (req, res) => {
   const drop = readPlace({ latitude: dropLat, longitude: dropLon });
   const leaveAt = readLeaveAt(leaveAtParam);
   if (!pickup || !drop) return res.status(400).json({ success: false, message: 'Pickup and destination are needed.' });
-  if (tooFar(pickup, drop)) return res.status(400).json({ success: false, message: TOO_FAR });
+  const distanceError = rideDistanceError(pickup, drop);
+  if (distanceError) return res.status(400).json({ success: false, message: distanceError });
   if (!leaveAt) return res.status(400).json({ success: false, message: 'Leaving time must be within the next 2 hours.' });
 
   const from = new Date(leaveAt.getTime() - WINDOW_MINUTES * 60_000);
@@ -112,7 +122,8 @@ const createRide = async (req, res) => {
   if (!pickup?.name || !destination?.name) {
     return res.status(400).json({ success: false, message: 'Pickup and destination are needed.' });
   }
-  if (tooFar(pickup, destination)) return res.status(400).json({ success: false, message: TOO_FAR });
+  const distanceError = rideDistanceError(pickup, destination);
+  if (distanceError) return res.status(400).json({ success: false, message: distanceError });
   if (!leaveAt) return res.status(400).json({ success: false, message: 'Leaving time must be within the next 2 hours.' });
 
   const active = await activeRideOf(req.user.id);
@@ -430,4 +441,4 @@ const leaveRide = async (req, res) => {
   res.json({ success: true, data: { left: true } });
 };
 
-module.exports = { MAX_MEMBERS, TOO_FAR, tooFar, point, readPlace, activeRideOf, matchRides, createRide, myRides, getRide, markBooked, cancelRide, leaveRide };
+module.exports = { MAX_MEMBERS, rideDistanceError, point, readPlace, activeRideOf, matchRides, createRide, myRides, getRide, markBooked, cancelRide, leaveRide };
