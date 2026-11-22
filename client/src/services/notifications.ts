@@ -81,3 +81,13 @@ export const notifyJoinRequest = (firstName: string | null) =>
 
 /** The rider's ask to join was accepted. */
 export const notifyAccepted = () => notify("You're in the group", 'Open Your rides to see who is going and where to meet.');
+
+const inRupees = (paise: number) => `₹${(paise / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+
+/** The booker entered the fare: this rider's share is due. */
+export const notifyPaymentDue = (amountPaise: number, bookerName: string | null) =>
+  notify(`Pay ${bookerName ?? 'the booker'} ${inRupees(amountPaise)}`, 'Your share of the cab fare. Open the ride to pay over UPI.');
+
+/** A rider says they've paid the booker. */
+export const notifyPaymentClaimed = (amountPaise: number, firstName: string | null) =>
+  notify(`${firstName ?? 'A rider'} marked ${inRupees(amountPaise)} as paid`, 'Check your UPI app, then tap Got it on the ride.');
