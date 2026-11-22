@@ -1,4 +1,6 @@
+const http = require('node:http');
 const app = require('./app');
+const { attachSocket } = require('./socket');
 const prisma = require('./config/db');
 
 const PORT = process.env.PORT ?? 4000;
@@ -17,7 +19,10 @@ const start = async () => {
     console.error('Database connection failed', err);
   }
 
-  app.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
+  // HTTP and Socket.io share one port
+  const server = http.createServer(app);
+  attachSocket(server);
+  server.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
 };
 
 start();

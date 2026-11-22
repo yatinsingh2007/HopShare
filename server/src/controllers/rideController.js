@@ -1,6 +1,7 @@
 const { randomUUID } = require('node:crypto');
 const { Prisma } = require('../../generated/prisma');
 const prisma = require('../config/db');
+const { emitToUser, rideChanged } = require('../socket');
 
 const MATCH_METRES = 1000;
 const WINDOW_MINUTES = 15;
@@ -239,6 +240,10 @@ const markBooked = async (req, res) => {
   }
 
   const bookedAt = ride.bookedAt ?? new Date();
+  const crowdedOut = await prisma.joinRequest.findMany({
+    where: { rideId: ride.id, status: 'PENDING' },
+    select: { userId: true },
+  });
   await prisma.$transaction([
     prisma.ride.update({
       where: { id: ride.id },
@@ -250,6 +255,8 @@ const markBooked = async (req, res) => {
     }),
   ]);
 
+  for (const { userId } of crowdedOut) emitToUser(userId, 'request:answered', { rideId: ride.id, status: 'CANCELLED' });
+  rideChanged(ride.id);
   res.json({
     success: true,
     data: { bookedAt, cabNumber: cabNumber?.toUpperCase() ?? null, tripLink },

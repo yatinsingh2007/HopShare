@@ -11,6 +11,10 @@ type AuthContextValue = {
   signIn: (path: SignInPath, body: object) => Promise<void>;
   signOut: () => Promise<void>;
   request: <T>(path: string, options?: RequestOptions) => Promise<T>;
+  /** For the socket handshake, which sends the same access token. */
+  getAccessToken: () => string | null;
+  /** A new access token, or null if signed out. */
+  refreshAccessToken: () => Promise<string | null>;
 };
 
 // Only the access token is kept here. The refresh token is an httpOnly cookie the phone's
@@ -87,9 +91,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await save(null);
   }, [save]);
 
+  const getAccessToken = useCallback(() => accessToken.current, []);
+
   const value = useMemo(
-    () => ({ isLoaded, isSignedIn, signIn, signOut, request }),
-    [isLoaded, isSignedIn, signIn, signOut, request],
+    () => ({ isLoaded, isSignedIn, signIn, signOut, request, getAccessToken, refreshAccessToken: refresh }),
+    [isLoaded, isSignedIn, signIn, signOut, request, getAccessToken, refresh],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

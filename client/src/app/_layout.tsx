@@ -15,6 +15,7 @@ import { ClerkProvider } from '@clerk/expo';
 import { tokenCache } from '@clerk/expo/token-cache';
 import { ThemeContext, type ThemePreference } from '@/context/ThemeContext';
 import { AuthProvider, useSession } from '@/context/AuthContext';
+import { SocketProvider } from '@/context/SocketContext';
 import { palettes } from '@/theme/tokens';
 import { Loading } from '@/components/Loading';
 
@@ -93,9 +94,11 @@ export default function RootLayout() {
   return (
     <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache}>
       <AuthProvider>
-        <ThemeContext.Provider value={theme}>
-          <RootStack />
-        </ThemeContext.Provider>
+        <SocketProvider>
+          <ThemeContext.Provider value={theme}>
+            <RootStack />
+          </ThemeContext.Provider>
+        </SocketProvider>
       </AuthProvider>
     </ClerkProvider>
   );

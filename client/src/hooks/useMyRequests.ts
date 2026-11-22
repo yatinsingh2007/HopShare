@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
 import { useSession } from '@/context/AuthContext';
+import { useSocketEvent } from '@/context/SocketContext';
 import { ApiError } from '@/services/api';
 
 export type MyRequest = {
@@ -31,6 +32,8 @@ export function useMyRequests() {
   }, [isSignedIn, request]);
 
   useFocusEffect(reload);
+  // accepted, declined, or closed because the group filled up or booked its cab
+  useSocketEvent('request:answered', reload);
 
   const withdraw = useCallback(
     async (r: MyRequest) => {

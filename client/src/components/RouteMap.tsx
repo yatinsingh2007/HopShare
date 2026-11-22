@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, type ReactNode } from 'react';
-import { StyleSheet, TurboModuleRegistry, View } from 'react-native';
+import { StyleSheet, Text, TurboModuleRegistry, View } from 'react-native';
 import Animated, {
   cubicBezier,
   Easing,
@@ -13,6 +13,10 @@ import type { CameraRef } from '@maplibre/maplibre-react-native';
 import { WebRouteMap } from '@/components/WebRouteMap';
 import { useTheme } from '@/context/ThemeContext';
 import type { Place } from '@/services/cabApps';
+import { fonts } from '@/theme/type';
+
+/** Another member of the group, live on the map while the group meets up. */
+export type RiderMarker = { id: string; initial: string; latitude: number; longitude: number };
 
 const STYLES = {
   light: 'https://tiles.openfreemap.org/styles/positron',
@@ -81,11 +85,23 @@ function ExtraPin() {
   return <View style={[styles.extra, { borderColor: colors.coach, backgroundColor: colors.card }]} />;
 }
 
-export function RouteMap({ pickup, destination, extra, bottomInset }: {
+// a group member: their initial on a black tile, like the member list
+function RiderPin({ initial }: { initial: string }) {
+  const { colors } = useTheme();
+  return (
+    <View style={[styles.rider, { backgroundColor: colors.plate, borderColor: colors.card }]}>
+      <Text style={[styles.riderText, { color: colors.plateInk }]}>{initial}</Text>
+    </View>
+  );
+}
+
+export function RouteMap({ pickup, destination, extra, riders, bottomInset }: {
   pickup: Place | null;
   destination: Place | null;
   /** An extra stop to show and fit in view, e.g. a requester's drop. */
   extra?: Place | null;
+  /** Group members' live positions. Not drawn on the Expo Go WebView fallback. */
+  riders?: RiderMarker[];
   /** Height of whatever covers the bottom of the map, so the route stays in the visible part. */
   bottomInset: number;
 }) {
@@ -171,6 +187,11 @@ export function RouteMap({ pickup, destination, extra, bottomInset }: {
           </Appear>
         </Marker>
       ) : null}
+      {riders?.map((r) => (
+        <Marker key={r.id} id={`rider-${r.id}`} lngLat={[r.longitude, r.latitude]} anchor="center">
+          <RiderPin initial={r.initial} />
+        </Marker>
+      ))}
       {destination ? (
         <Marker id="destination" lngLat={[destination.longitude, destination.latitude]} anchor="center">
           <Appear key={`${destination.longitude},${destination.latitude}`} fromY={-8}>
@@ -200,5 +221,19 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
   },
   pinCore: { width: 6, height: 6, borderRadius: 1 },
+  rider: {
+    width: 30,
+    height: 30,
+    borderRadius: 6,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  riderText: { fontFamily: fonts.extrabold, fontSize: 15, lineHeight: 20 },
   extra: { width: 20, height: 20, borderRadius: 4, borderWidth: 3, borderStyle: 'dashed' },
 });
