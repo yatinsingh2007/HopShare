@@ -11,6 +11,7 @@ import { clock, groupCode } from '@/components/RideCard';
 import { RouteMap } from '@/components/RouteMap';
 import { useSocketEvent } from '@/context/SocketContext';
 import { useLiveRide } from '@/hooks/useLiveRide';
+import { hasUnseenChat } from '@/services/chatSeen';
 import { Bone, SkeletonCard } from '@/components/Skeleton';
 import { SignBand } from '@/components/SignBand';
 import { useSession } from '@/context/AuthContext';
@@ -35,6 +36,7 @@ type Ride = {
   fare: Fare | null;
   /** I'm sending a public live link for this ride (Safety tab). */
   sharingTrip: boolean;
+  lastMessageAt: string | null;
 };
 
 type JoinRequest = {
@@ -198,6 +200,50 @@ function LiveRideMap({ ride, extra }: { ride: Ride; extra: Place | null }) {
         </Animated.View>
       ) : null}
     </>
+  );
+}
+
+/** Opens the group chat; a yellow dot means messages since I last looked. */
+function ChatEntry({ ride }: { ride: Ride }) {
+  const { colors } = useTheme();
+  const [unseen, setUnseen] = useState(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      let live = true;
+      hasUnseenChat(ride.id, ride.lastMessageAt).then((v) => live && setUnseen(v));
+      return () => {
+        live = false;
+      };
+    }, [ride.id, ride.lastMessageAt]),
+  );
+  useSocketEvent<{ rideId: string; message: { isMe: boolean } }>('chat:message', ({ rideId, message }) => {
+    if (rideId === ride.id && !message.isMe) setUnseen(true);
+  });
+
+  const others = ride.members.filter((m) => !m.isMe).map((m) => m.firstName ?? 'Rider');
+  return (
+    <Animated.View entering={FadeInDown.delay(160).duration(260)}>
+      <Pressable
+        onPress={() => router.push({ pathname: '/chat/[id]', params: { id: ride.id } })}
+        accessibilityRole="button"
+        accessibilityLabel={`Group chat with ${others.join(', ')}${unseen ? ', new messages' : ''}`}
+        android_ripple={{ color: colors.line }}
+        style={({ pressed }) => [styles.card, styles.chat, { backgroundColor: colors.card, borderColor: unseen ? colors.ink : colors.line }, pressed && styles.pressed]}
+      >
+        <View style={[styles.chatIcon, { backgroundColor: unseen ? colors.accent : colors.plate }]}>
+          <Icon name="chat" size={22} color={unseen ? colors.accentInk : colors.plateInk} />
+        </View>
+        <View style={styles.flex}>
+          <Text style={[type.title, { color: colors.ink }]}>Group chat</Text>
+          <Text style={[type.bodySmall, { color: unseen ? colors.ink : colors.muted }]} numberOfLines={1}>
+            {unseen ? 'New messages' : `With ${others.join(', ')}`}
+          </Text>
+        </View>
+        {unseen ? <View style={[styles.newDot, { backgroundColor: colors.accent, borderColor: colors.ink }]} /> : null}
+        <Icon name="chevron_right" size={22} color={colors.muted} />
+      </Pressable>
+    </Animated.View>
   );
 }
 
@@ -484,6 +530,8 @@ export default function RideScreen() {
               </View>
             </View>
 
+            {ride.members.length > 1 ? <ChatEntry ride={ride} /> : null}
+
             {ride.live ? (
               <Animated.View entering={FadeInDown.delay(200).duration(260)}>
                 <CabBooking
@@ -569,6 +617,9 @@ const styles = StyleSheet.create({
   open: { borderWidth: 1.5, borderStyle: 'dashed' },
   request: { gap: 14 },
   skeletonStops: { padding: 16, gap: 10 },
+  chat: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  chatIcon: { width: 40, height: 40, borderRadius: 6, alignItems: 'center', justifyContent: 'center' },
+  newDot: { width: 12, height: 12, borderRadius: 6, borderWidth: 2 },
   live: {
     position: 'absolute',
     left: 16,
