@@ -55,3 +55,10 @@ export const bookOnOla = (pickup: Place, drop: Place) => {
   const webUrl = 'https://book.olacabs.com/?' + query({ ...params, pickup_name: pickup.name, drop_name: drop.name });
   return openWithFallback(appUrl, webUrl);
 };
+
+/**
+ * Rapido has no public deep link, so this only opens the app (no route filled in).
+ * Not installed: its Play Store page. App ID `com.rapido.passenger`, still to confirm on a phone.
+ */
+export const openRapido = () =>
+  openWithFallback('rapido://', 'https://play.google.com/store/apps/details?id=com.rapido.passenger');

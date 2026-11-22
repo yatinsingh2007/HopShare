@@ -44,7 +44,7 @@ Each part of the design below is marked **Built**, **Planned** (decided, not cod
 | Own auth on the server: JWT access + refresh tokens | Done |
 | Database schema and migrations (Prisma, PostGIS) | Done |
 | Home screen: map, place search, live pickup location | Done |
-| One-tap Uber / Ola booking with the route filled in | Done (not yet on a screen) |
+| One-tap Uber / Ola booking with the route filled in, Open Rapido, Cab booked with cab details | Done |
 | Matched groups screen, join requests, 1 km matching | Next |
 | Google sign-in | Later |
 | Live location, group updates (Socket.io) | Planned |
@@ -434,7 +434,7 @@ Rule of thumb: if losing it on a restart doesn't matter and it expires within mi
 
 ## 9. Booking the cab
 
-**Built, not yet on a screen.** Uber's and Ola's ride APIs are for partners only, so HopShare hands off instead:
+**Built** (on the ride screen). Uber's and Ola's ride APIs are for partners only, so HopShare hands off instead:
 
 ```mermaid
 flowchart LR
@@ -446,7 +446,9 @@ flowchart LR
     Book --> Back[Back in HopShare:<br/>Cab booked + cab number,<br/>trip-share link]
 ```
 
-Rapido has no public deep link; the plan is an "Open Rapido" button plus a copy button for the destination.
+Rapido has no public deep link, so there's an **Open Rapido** button (Play Store page if it isn't installed) and a **Copy drop** button.
+
+When the booker taps **Cab booked** (`POST /api/rides/:id/booked`), they can add the cab number and the cab app's https trip-share link (which already shows the driver and a live map). That closes the group (`joinable = false`) and cancels pending join requests. Everyone in the group sees the cab number styled as a plate and a **Track the cab** button. Calling it again just updates the details.
 
 ## 10. Safety
 

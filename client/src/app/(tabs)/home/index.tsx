@@ -28,6 +28,7 @@ import { Pictogram } from '@/components/Pictogram';
 import { clock, groupCode, RideCard } from '@/components/RideCard';
 import { RouteMap } from '@/components/RouteMap';
 import { SignBand } from '@/components/SignBand';
+import { PlaceRowSkeleton } from '@/components/Skeleton';
 import { useTheme } from '@/context/ThemeContext';
 import { useMe } from '@/hooks/useMe';
 import { useMyRequests, type MyRequest } from '@/hooks/useMyRequests';
@@ -420,7 +421,7 @@ export default function Home() {
           <Text style={[type.label, styles.listLabel, { color: colors.muted }]}>Stations near you</Text>
         ) : null}
         {findingStations && !stations.length ? (
-          <ActivityIndicator style={styles.note} size="small" color={colors.muted} />
+          [0, 1, 2].map((i) => <PlaceRowSkeleton key={i} index={i} />)
         ) : (
           stations.map((p, i) => (
             <PlaceRow key={p.id} index={recent.length + i} icon="train" place={p} onPress={() => choose(p)} />

@@ -159,6 +159,9 @@ const getRide = async (req, res) => {
       destinationName: true,
       time: true,
       rideCreatorId: true,
+      bookedAt: true,
+      cabNumber: true,
+      tripLink: true,
       users: { select: { id: true, name: true } },
     },
   });
@@ -185,8 +188,72 @@ const getRide = async (req, res) => {
       isCreator: ride.rideCreatorId === req.user.id,
       members,
       seatsLeft: MAX_MEMBERS - members.length,
+      booking: ride.bookedAt
+        ? {
+            bookedAt: ride.bookedAt,
+            cabNumber: ride.cabNumber,
+            tripLink: ride.tripLink,
+          }
+        : null,
     },
   });
 };
 
-module.exports = { MAX_MEMBERS, point, readPlace, activeRideOf, matchRides, createRide, myRides, getRide };
+// optional text: trimmed, empty becomes null, too long is refused
+const readText = (value, max) => {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'string' || value.trim().length > max) return undefined;
+  return value.trim() || null;
+};
+
+// only https links, since the others will open it
+const readLink = (value) => {
+  const text = readText(value, 500);
+  if (!text) return text;
+  try {
+    return new URL(text).protocol === 'https:' ? text : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+// POST /api/rides/:id/booked { cabNumber?, tripLink? } — the booker says the cab is booked.
+// Closes the group to new riders and cancels pending requests. Calling it again updates the details.
+const markBooked = async (req, res) => {
+  const body = req.body ?? {};
+  const cabNumber = readText(body.cabNumber, 15);
+  const tripLink = readLink(body.tripLink);
+  if (cabNumber === undefined) return res.status(400).json({ success: false, message: 'Cab number can be up to 15 characters.' });
+  if (tripLink === undefined) return res.status(400).json({ success: false, message: 'Trip link must be a https:// link.' });
+
+  const ride = await prisma.ride.findFirst({
+    where: { id: req.params.id, users: { some: { id: req.user.id } } },
+    select: { id: true, time: true, rideCreatorId: true, bookedAt: true },
+  });
+  if (!ride) return res.status(404).json({ success: false, message: 'Ride not found.' });
+  if (ride.rideCreatorId !== req.user.id) {
+    return res.status(403).json({ success: false, message: 'Only the person who started the group books the cab.' });
+  }
+  if (ride.time.getTime() <= Date.now() - 5 * 60_000) {
+    return res.status(409).json({ success: false, message: 'This group has already left.' });
+  }
+
+  const bookedAt = ride.bookedAt ?? new Date();
+  await prisma.$transaction([
+    prisma.ride.update({
+      where: { id: ride.id },
+      data: { bookedAt, joinable: false, cabNumber: cabNumber?.toUpperCase() ?? null, tripLink },
+    }),
+    prisma.joinRequest.updateMany({
+      where: { rideId: ride.id, status: 'PENDING' },
+      data: { status: 'CANCELLED', respondedAt: new Date() },
+    }),
+  ]);
+
+  res.json({
+    success: true,
+    data: { bookedAt, cabNumber: cabNumber?.toUpperCase() ?? null, tripLink },
+  });
+};
+
+module.exports = { MAX_MEMBERS, point, readPlace, activeRideOf, matchRides, createRide, myRides, getRide, markBooked };

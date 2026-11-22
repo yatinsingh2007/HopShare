@@ -61,6 +61,12 @@ model Ride {
   sourceName      String
   destinationName String
   rideCreatorId   String
+  // Set when the booker taps "Cab booked"; the group then takes no new riders.
+  bookedAt        DateTime?
+  // What riders look for at the kerb, and the record if something goes wrong
+  cabNumber       String?
+  // The cab app's trip-share link, so the others can track the cab
+  tripLink        String?
 
   rideCreator  User          @relation("RideCreator", fields: [rideCreatorId], references: [id])
   users        User[]        @relation("RideUsers")
