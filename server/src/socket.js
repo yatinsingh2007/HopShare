@@ -18,12 +18,22 @@ const rideAccess = async (rideId) => {
   if (cached && cached.until > Date.now()) return cached;
   const ride = await prisma.ride.findUnique({
     where: { id: rideId },
-    select: { time: true, bookedAt: true, pickedUpAt: true, endedAt: true, users: { select: { id: true } } },
+    select: {
+      time: true,
+      bookedAt: true,
+      pickedUpAt: true,
+      endedAt: true,
+      users: { select: { id: true } },
+      tripShares: { where: { stoppedAt: null, expiresAt: { gt: new Date() } }, select: { userId: true } },
+    },
   });
+  const stage = ride ? stageOf(ride) : 'past';
   const entry = {
     members: new Set(ride?.users.map((u) => u.id) ?? []),
-    // from "cab booked" until "picked up"
-    sharing: !!ride && stageOf(ride) === 'booked',
+    // the whole group shares from "cab booked" until "picked up"
+    sharing: stage === 'booked',
+    // riders with a trip-share link keep sending until the ride ends
+    sharers: new Set(stage === 'booked' || stage === 'picked_up' ? (ride?.tripShares.map((t) => t.userId) ?? []) : []),
     until: Date.now() + ACCESS_TTL,
   };
   access.set(rideId, entry);
@@ -66,13 +76,15 @@ const updateLocation = async (socket, { rideId, latitude, longitude } = {}) => {
   if (typeof rideId !== 'string') return;
   if (!Number.isFinite(latitude) || Math.abs(latitude) > 90) return;
   if (!Number.isFinite(longitude) || Math.abs(longitude) > 180) return;
-  const { members, sharing } = await rideAccess(rideId);
-  if (!sharing || !members.has(socket.data.userId)) return;
+  const { members, sharing, sharers } = await rideAccess(rideId);
+  const me = socket.data.userId;
+  if (!members.has(me) || (!sharing && !sharers.has(me))) return;
 
   const at = Date.now();
   if (!positions.has(rideId)) positions.set(rideId, new Map());
-  positions.get(rideId).set(socket.data.userId, { latitude, longitude, at });
-  socket.to(`ride:${rideId}`).emit('location:update', { userId: socket.data.userId, latitude, longitude, at });
+  positions.get(rideId).set(me, { latitude, longitude, at });
+  // the group sees each other only while meeting up; a trip-share position is for its public link
+  if (sharing) socket.to(`ride:${rideId}`).emit('location:update', { userId: me, latitude, longitude, at });
 };
 
 // drop positions nobody has refreshed in a minute, and rides left with none
@@ -115,4 +127,10 @@ const tell = (userId, event, data, { kind, text }) => {
     .catch(() => {});
 };
 
-module.exports = { attachSocket, emitToUser, rideChanged, tell };
+// a rider's latest position on a ride, if fresh (for the public trip-share page)
+const positionOf = (rideId, userId) => {
+  const p = positions.get(rideId)?.get(userId);
+  return p && Date.now() - p.at < POSITION_TTL ? p : null;
+};
+
+module.exports = { attachSocket, emitToUser, rideChanged, tell, positionOf };

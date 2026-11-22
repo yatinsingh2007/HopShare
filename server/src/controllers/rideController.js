@@ -184,6 +184,11 @@ const getRide = async (req, res) => {
         select: { id: true, fromId: true, amountPaise: true, status: true, claimedAt: true },
         orderBy: { createdAt: 'asc' },
       },
+      tripShares: {
+        where: { userId: req.user.id, stoppedAt: null, expiresAt: { gt: new Date() } },
+        select: { token: true },
+        take: 1,
+      },
     },
   });
   if (!ride) return res.status(404).json({ success: false, message: 'Ride not found.' });
@@ -219,6 +224,8 @@ const getRide = async (req, res) => {
           }
         : null,
       fare: ride.endedAt ? fareView(ride, members, req.user.id) : null,
+      // am I sending a public live link for this ride?
+      sharingTrip: !ride.endedAt && ride.tripShares.length > 0,
     },
   });
 };
