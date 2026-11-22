@@ -203,6 +203,7 @@ const getRide = async (req, res) => {
         select: { token: true },
         take: 1,
       },
+      chat: { select: { messages: { select: { createdAt: true }, orderBy: { createdAt: 'desc' }, take: 1 } } },
     },
   });
   if (!ride) return res.status(404).json({ success: false, message: 'Ride not found.' });
@@ -240,6 +241,8 @@ const getRide = async (req, res) => {
       fare: ride.endedAt ? fareView(ride, members, req.user.id) : null,
       // am I sending a public live link for this ride?
       sharingTrip: !ride.endedAt && ride.tripShares.length > 0,
+      // when the group chat last had a message, so the app can show a "new" dot
+      lastMessageAt: ride.chat?.messages[0]?.createdAt ?? null,
     },
   });
 };

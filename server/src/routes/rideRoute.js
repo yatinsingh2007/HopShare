@@ -2,6 +2,7 @@ const { Router } = require('express');
 const { matchRides, createRide, myRides, getRide, markBooked } = require('../controllers/rideController');
 const { pickedUp, setFare, claimPayment, confirmPayment } = require('../controllers/fareController');
 const { startShare, stopShare } = require('../controllers/safetyController');
+const { listMessages, sendMessage } = require('../controllers/chatController');
 const {
   requestToJoin,
   listRequests,
@@ -20,6 +21,8 @@ router.get('/:id', getRide);
 router.post('/', createRide);
 router.post('/:id/booked', markBooked);
 router.post('/:id/picked-up', pickedUp);
+router.get('/:id/messages', listMessages);
+router.post('/:id/messages', sendMessage);
 router.post('/:id/share', startShare);
 router.delete('/:id/share', stopShare);
 router.post('/:id/fare', setFare);

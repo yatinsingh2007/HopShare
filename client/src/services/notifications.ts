@@ -91,3 +91,7 @@ export const notifyPaymentDue = (amountPaise: number, bookerName: string | null)
 /** A rider says they've paid the booker. */
 export const notifyPaymentClaimed = (amountPaise: number, firstName: string | null) =>
   notify(`${firstName ?? 'A rider'} marked ${inRupees(amountPaise)} as paid`, 'Check your UPI app, then tap Got it on the ride.');
+
+/** A group chat message, while the app is open but that chat isn't. */
+export const notifyChat = (firstName: string | null, content: string) =>
+  notify(firstName ?? 'Your group', content.length > 120 ? `${content.slice(0, 117)}…` : content);

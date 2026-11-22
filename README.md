@@ -33,7 +33,7 @@ That changes the hard problems:
 - **City rides only:** a ride's destination can be at most 70 km (straight line) from its pickup. The app only offers places in range, and the server refuses anything further.
 - **Privacy by default:** other riders see only first name, photo and badges. Never phone number, last name, address or regular routes.
 - **No fake profiles:** every rider is ID-verified before their first shared ride, and the server (not the app) enforces it.
-- **Not in v1:** in-app cab booking, a payment gateway, drivers, uneven (distance-based) splits, in-app chat.
+- **Not in v1:** in-app cab booking, a payment gateway, drivers, uneven (distance-based) splits.
 
 ## Status
 
@@ -51,6 +51,7 @@ Each part of the design below is marked **Built**, **Planned** (decided, not cod
 | Live location, group updates (Socket.io) | Done (foreground only) |
 | Tabs: Rides, Payments, Safety; Activity feed (bell on Home) | Done |
 | SOS, trusted contacts, public trip-share link | Done |
+| Group chat per ride (members only, quick replies) | Done |
 | Redis | Later, only when we run more than one server |
 | Fare split and UPI payback | Done |
 | DigiLocker verification | Planned |
@@ -437,6 +438,10 @@ flowchart LR
 Rule of thumb: if losing it on a restart doesn't matter and it expires within minutes, it's live state (memory now, Redis when we scale). Everything else goes in Postgres.
 
 **When location is shared:** from "group full / cab booked" until "picked up", for everyone in the group. After that, only a rider who taps **Share trip** or **SOS** keeps streaming. On the phone, incoming locations update the map markers without re-rendering the whole screen, because they arrive several times a second across a group.
+
+### Group chat
+
+**Built** (`server/src/controllers/chatController.js`, `client/src/app/chat/[id].tsx`). One chat per ride, made on the first message; only the ride's members can read or post (first names only). `GET /api/rides/:id/messages` pages 50 at a time; `POST` takes 1–500 characters, at most 10 per 10 s. New messages go to each member's `user:<id>` room as `chat:message`, so the ride screen's "new" dot and a notification work even when the chat isn't open. Quick replies ("I'm at the pickup", "Running 2 min late"). The chat stays open while the ride is live and for a day after it ends, then turns read-only.
 
 ## 9. Booking the cab
 

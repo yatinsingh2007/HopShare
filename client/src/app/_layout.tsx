@@ -43,6 +43,7 @@ function RootStack() {
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="profile-setup" />
         <Stack.Screen name="ride/[id]" />
+        <Stack.Screen name="chat/[id]" />
       </Stack.Protected>
     </Stack>
   );

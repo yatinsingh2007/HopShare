@@ -37,6 +37,8 @@ const IOS: Partial<Record<AndroidSymbol, SFSymbol>> = {
   dark_mode: 'moon.fill',
   logout: 'rectangle.portrait.and.arrow.right',
   two_wheeler: 'scooter',
+  send: 'paperplane.fill',
+  chat: 'bubble.left.and.bubble.right.fill',
   notifications: 'bell.fill',
   shield: 'shield.fill',
   sos: 'sos',
