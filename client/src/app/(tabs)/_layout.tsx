@@ -38,6 +38,10 @@ export default function TabsLayout() {
         options={{ title: 'Rides', tabBarIcon: ({ focused }) => <TabIcon name="directions_car" focused={focused} /> }}
       />
       <Tabs.Screen
+        name="payments"
+        options={{ title: 'Payments', tabBarIcon: ({ focused }) => <TabIcon name="currency_rupee" focused={focused} /> }}
+      />
+      <Tabs.Screen
         name="profile"
         options={{ title: 'Profile', tabBarIcon: ({ focused }) => <TabIcon name="person" focused={focused} /> }}
       />

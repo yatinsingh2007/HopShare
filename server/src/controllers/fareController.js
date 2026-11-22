@@ -126,4 +126,48 @@ const confirmPayment = async (req, res) => {
   res.json({ success: true, data: { id: req.params.paymentId, status: 'PAID', settled } });
 };
 
-module.exports = { pickedUp, setFare, claimPayment, confirmPayment };
+// GET /api/me/payments — every payment I'm part of: what I owe bookers and what riders owe me
+const myPayments = async (req, res) => {
+  const select = {
+    id: true,
+    rideId: true,
+    amountPaise: true,
+    status: true,
+    claimedAt: true,
+    createdAt: true,
+    ride: { select: { destinationName: true, endedAt: true } },
+  };
+  const [owe, owed] = await Promise.all([
+    prisma.payment.findMany({
+      where: { fromId: req.user.id },
+      select: { ...select, to: { select: { name: true, upiId: true } } },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    }),
+    prisma.payment.findMany({
+      where: { toId: req.user.id },
+      select: { ...select, from: { select: { name: true } } },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    }),
+  ]);
+
+  const view = (p) => ({
+    id: p.id,
+    rideId: p.rideId,
+    destinationName: p.ride.destinationName,
+    endedAt: p.ride.endedAt,
+    amountPaise: p.amountPaise,
+    status: p.status,
+    claimedAt: p.claimedAt,
+  });
+  res.json({
+    success: true,
+    data: {
+      owe: owe.map((p) => ({ ...view(p), toName: p.to.name, toUpiId: p.to.upiId })),
+      owed: owed.map((p) => ({ ...view(p), fromName: p.from.name })),
+    },
+  });
+};
+
+module.exports = { pickedUp, setFare, claimPayment, confirmPayment, myPayments };
