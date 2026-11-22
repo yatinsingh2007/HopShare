@@ -61,3 +61,23 @@ export async function notifyRideLive(pickup: Place, destination: Place, leaveAt:
     // a missing notification must never break starting a group
   }
 }
+
+async function notify(title: string, body: string) {
+  try {
+    const n = notifications();
+    if (!n || !(await canNotify(n))) return;
+    await n.scheduleNotificationAsync({
+      content: { title, body },
+      trigger: Platform.OS === 'android' ? { channelId: CHANNEL } : null,
+    });
+  } catch {
+    // a missing notification must never break anything else
+  }
+}
+
+/** The creator's group got a new ask to join (arrives over the socket while the app is open). */
+export const notifyJoinRequest = (firstName: string | null) =>
+  notify(`${firstName ?? 'A rider'} wants to join your group`, 'Open the ride to see their drop and accept or decline.');
+
+/** The rider's ask to join was accepted. */
+export const notifyAccepted = () => notify("You're in the group", 'Open Your rides to see who is going and where to meet.');

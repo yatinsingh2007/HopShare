@@ -47,7 +47,7 @@ Each part of the design below is marked **Built**, **Planned** (decided, not cod
 | One-tap Uber / Ola booking with the route filled in, Open Rapido, Cab booked with cab details | Done |
 | Matched groups screen, join requests, 1 km matching | Next |
 | Google sign-in | Later |
-| Live location, group updates (Socket.io) | Planned |
+| Live location, group updates (Socket.io) | Done (foreground only) |
 | Redis | Later, only when we run more than one server |
 | DigiLocker verification, fare split and UPI payback | Planned |
 
@@ -379,17 +379,19 @@ stateDiagram-v2
 
 ## 8. Real time: Socket.io (and Redis later)
 
-**Planned.** The socket handshake sends the same access token as HTTP and goes through the same check as `requireUser`. Each member joins a room per ride, `ride:<rideId>`.
+**Built** (`server/src/socket.js`, `client/src/context/SocketContext.tsx`). The socket handshake sends the same access token as HTTP and goes through the same check as `requireUser`; an expired token is refreshed once and the socket reconnects. Every phone joins `user:<userId>`; a phone with the ride screen open joins `ride:<rideId>` (`ride:watch`, members only).
 
-**Proposed events:**
+**Events:**
 
 | Event | From → to | When |
 |---|---|---|
-| `join-request:new` | server → creator | a rider asks to join |
-| `join-request:answered` | server → rider | accepted / rejected |
-| `ride:updated` | server → room | member joins/leaves, cab booked, picked up, ended |
-| `location:update` | phone → server → room | every few seconds, meet-up window only |
-| `payment:updated` | server → room | someone paid / booker confirmed |
+| `requests:updated` | server → creator | a rider asks to join (with their first name) or withdraws |
+| `request:answered` | server → rider | accepted, rejected, or cancelled because the group filled or booked its cab |
+| `ride:updated` | server → room | member joined, cab booked (later: picked up, ended) |
+| `location:update` | phone → server → room | every ~5 s from cab booked until the ride leaves, while the ride screen is open |
+| `payment:updated` | server → room | planned: someone paid / booker confirmed |
+
+Screens refetch over HTTP when an update event arrives, so events carry ids, not data. A request or an acceptance also shows a local notification while the app is open. Location is foreground only for now (no background task), and the Expo Go WebView map doesn't draw riders.
 
 ### Live state: in memory now, Redis later
 

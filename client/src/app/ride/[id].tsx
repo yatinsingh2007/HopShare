@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -8,6 +8,8 @@ import { CabBooking, type Booking, type BookingInput } from '@/components/CabBoo
 import { Icon } from '@/components/Icon';
 import { clock, groupCode } from '@/components/RideCard';
 import { RouteMap } from '@/components/RouteMap';
+import { useSocketEvent } from '@/context/SocketContext';
+import { useLiveRide } from '@/hooks/useLiveRide';
 import { Bone, SkeletonCard } from '@/components/Skeleton';
 import { SignBand } from '@/components/SignBand';
 import { useSession } from '@/context/AuthContext';
@@ -143,6 +145,51 @@ function OpenSeat({ index }: { index: number }) {
   );
 }
 
+/**
+ * The map, with the other members' live positions from "cab booked" until the ride leaves.
+ * Positions live in this component, so frequent updates re-render only the map, not the screen.
+ */
+function LiveRideMap({ ride, extra }: { ride: Ride; extra: Place | null }) {
+  const { colors } = useTheme();
+  const share = ride.live && !!ride.booking;
+  const { positions, denied } = useLiveRide(ride.id, share);
+
+  const riders = useMemo(
+    () =>
+      ride.members.flatMap((m) => {
+        const p = positions[m.id];
+        return p && !m.isMe
+          ? [{ id: m.id, initial: (m.firstName ?? 'R').charAt(0).toUpperCase(), latitude: p.latitude, longitude: p.longitude }]
+          : [];
+      }),
+    [ride.members, positions],
+  );
+
+  return (
+    <>
+      <RouteMap pickup={ride.pickup} destination={ride.destination} extra={extra} riders={riders} bottomInset={SHEET_OVERLAP} />
+      {share ? (
+        <Animated.View
+          entering={FadeIn.duration(240)}
+          accessible
+          accessibilityLiveRegion="polite"
+          accessibilityLabel={
+            denied
+              ? 'Location is off, so the group cannot see you'
+              : `Sharing your live location with the group. ${riders.length} of the others on the map`
+          }
+          style={[styles.live, { backgroundColor: colors.card, borderColor: colors.line, bottom: SHEET_OVERLAP + 12 }]}
+        >
+          <View style={[styles.liveDot, { backgroundColor: denied ? colors.danger : colors.success }]} />
+          <Text style={[type.bodySmall, { color: colors.ink }]}>
+            {denied ? 'Location off · the group can\u2019t see you' : `Live · ${riders.length} of ${ride.members.length - 1} on the map`}
+          </Text>
+        </Animated.View>
+      ) : null}
+    </>
+  );
+}
+
 // the ride screen's layout while it loads: map, leaving-time plate, stops, riders
 function RideSkeleton({ mapHeight }: { mapHeight: number }) {
   const { colors } = useTheme();
@@ -200,12 +247,18 @@ export default function RideScreen() {
     [request, id],
   );
 
-  // no live updates yet, so look again each time the screen comes into view
+  // look again each time the screen comes into view, and whenever the server says something changed
   useFocusEffect(
     useCallback(() => {
       fetchRide();
     }, [fetchRide]),
   );
+  const changed = useCallback(({ rideId }: { rideId: string }) => {
+    if (rideId === id) fetchRide();
+  }, [id, fetchRide]);
+  // ride:updated reaches this phone because LiveRideMap keeps it in the ride's room
+  useSocketEvent('ride:updated', changed);
+  useSocketEvent('requests:updated', changed);
 
   const refresh = async () => {
     setRefreshing(true);
@@ -288,12 +341,7 @@ export default function RideScreen() {
       {height > 0 ? (
         <>
           <View style={{ height: mapHeight }}>
-            <RouteMap
-              pickup={ride.pickup}
-              destination={ride.destination}
-              extra={requests.find((r) => r.id === selected)?.destination ?? null}
-              bottomInset={SHEET_OVERLAP}
-            />
+            <LiveRideMap ride={ride} extra={requests.find((r) => r.id === selected)?.destination ?? null} />
           </View>
 
           <ScrollView
@@ -464,6 +512,18 @@ const styles = StyleSheet.create({
   open: { borderWidth: 1.5, borderStyle: 'dashed' },
   request: { gap: 14 },
   skeletonStops: { padding: 16, gap: 10 },
+  live: {
+    position: 'absolute',
+    left: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1.5,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    minHeight: 36,
+  },
+  liveDot: { width: 8, height: 8, borderRadius: 4 },
   requestHead: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
   requestActions: { flexDirection: 'row', gap: 10 },
   initialText: { fontFamily: fonts.extrabold, fontSize: 18, lineHeight: 24 },
