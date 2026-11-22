@@ -25,13 +25,14 @@ import type { AndroidSymbol } from 'expo-symbols';
 import { Button } from '@/components/Button';
 import { Icon } from '@/components/Icon';
 import { Pictogram } from '@/components/Pictogram';
-import { clock, groupCode, RideCard } from '@/components/RideCard';
+import { RideCard } from '@/components/RideCard';
+import { RequestRow } from '@/components/RequestRow';
 import { RouteMap } from '@/components/RouteMap';
 import { SignBand } from '@/components/SignBand';
 import { PlaceRowSkeleton } from '@/components/Skeleton';
 import { useTheme } from '@/context/ThemeContext';
 import { useMe } from '@/hooks/useMe';
-import { useMyRequests, type MyRequest } from '@/hooks/useMyRequests';
+import { useMyRequests } from '@/hooks/useMyRequests';
 import { useMyRides } from '@/hooks/useMyRides';
 import {
   distanceBetween,
@@ -119,36 +120,6 @@ function PlaceRow({ icon, place, onPress, index }: {
           ) : null}
         </View>
       </Pressable>
-    </Animated.View>
-  );
-}
-
-function RequestRow({ req, onWithdraw }: { req: MyRequest; onWithdraw: () => void }) {
-  const { colors } = useTheme();
-  const [busy, setBusy] = useState(false);
-  return (
-    <Animated.View
-      entering={FadeInDown.duration(240)}
-      style={[styles.request, { backgroundColor: colors.card, borderColor: colors.line }]}
-    >
-      <Pictogram name="hourglass_top" size={40} tone="sign" />
-      <View style={styles.flex}>
-        <Text style={[type.title, type.figure, { color: colors.ink }]} numberOfLines={1}>
-          {groupCode(req.rideId)} · leaves {clock(req.leaveAt)}
-        </Text>
-        <Text style={[type.bodySmall, { color: colors.muted }]} numberOfLines={2}>
-          to {req.destinationName} · waiting for {req.creatorName ?? 'the group'} to accept
-        </Text>
-      </View>
-      <Button
-        label="Withdraw"
-        variant="text"
-        loading={busy}
-        onPress={() => {
-          setBusy(true);
-          Promise.resolve(onWithdraw()).finally(() => setBusy(false));
-        }}
-      />
     </Animated.View>
   );
 }
@@ -606,7 +577,6 @@ const styles = StyleSheet.create({
   input: { flex: 1, paddingVertical: 8 },
   divider: { height: 1 },
   section: { gap: 12 },
-  request: { flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 1.5, borderRadius: 12, paddingLeft: 12, paddingVertical: 10 },
   sectionHead: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
   chips: { gap: 8, paddingRight: 20 },
   chip: {

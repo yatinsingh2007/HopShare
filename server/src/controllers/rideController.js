@@ -130,7 +130,12 @@ const myRides = async (req, res) => {
       time: true,
       rideCreatorId: true,
       bookedAt: true,
+      pickedUpAt: true,
       endedAt: true,
+      farePaise: true,
+      paymentStatus: true,
+      // my share, if I owe the booker
+      payments: { where: { fromId: req.user.id }, select: { amountPaise: true, status: true } },
       _count: { select: { users: true } },
     },
     orderBy: { time: 'desc' },
@@ -148,6 +153,10 @@ const myRides = async (req, res) => {
       seatsLeft: MAX_MEMBERS - r._count.users,
       isCreator: r.rideCreatorId === req.user.id,
       live: isLiveRide(r),
+      stage: stageOf(r),
+      farePaise: r.farePaise,
+      settled: r.paymentStatus === 'PAID',
+      myShare: r.payments[0] ?? null,
     })),
   });
 };

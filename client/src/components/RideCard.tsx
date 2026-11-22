@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import { Icon } from '@/components/Icon';
 import { useTheme } from '@/context/ThemeContext';
 import type { MyRide } from '@/hooks/useMyRides';
+import { rupees } from '@/services/upi';
 import { type } from '@/theme/type';
 
 const SEATS = 4;
@@ -50,13 +51,33 @@ export function RideCard({ ride, index = 0 }: { ride: MyRide; index?: number }) 
   const fg = live ? colors.coachInk : colors.ink;
   const soft = live ? 'rgba(255,255,255,0.78)' : colors.muted;
   const code = groupCode(ride.id);
+  const badge = live ? 'LIVE' : ride.stage === 'ended' ? 'DONE' : 'PAST';
+  // after the ride: the fare and where my money stands
+  const money =
+    ride.stage === 'ended' && ride.farePaise !== null
+      ? [
+          `${rupees(ride.farePaise)} fare`,
+          ride.myShare
+            ? ride.myShare.status === 'PAID'
+              ? 'you paid'
+              : `you owe ${rupees(ride.myShare.amountPaise)}`
+            : ride.isCreator
+              ? ride.settled
+                ? 'all paid back'
+                : 'waiting on payments'
+              : null,
+        ]
+          .filter(Boolean)
+          .join(' · ')
+      : null;
+  const owing = ride.myShare?.status === 'PENDING';
 
   return (
     <Animated.View entering={FadeInDown.delay(index * 50).duration(260)}>
       <Pressable
         onPress={() => router.push({ pathname: '/ride/[id]', params: { id: ride.id } })}
         accessibilityRole="button"
-        accessibilityLabel={`${live ? 'Live' : 'Past'} ride ${code}, ${ride.isCreator ? 'you started it' : 'you joined'}. ${ride.pickupName} to ${ride.destinationName}, ${dayLabel(ride.leaveAt)} ${clock(ride.leaveAt)}. ${ride.members} of ${SEATS} riders. Open`}
+        accessibilityLabel={`${live ? 'Live' : ride.stage === 'ended' ? 'Finished' : 'Past'} ride ${code},${money ? ` ${money}.` : ''} ${ride.isCreator ? 'you started it' : 'you joined'}. ${ride.pickupName} to ${ride.destinationName}, ${dayLabel(ride.leaveAt)} ${clock(ride.leaveAt)}. ${ride.members} of ${SEATS} riders. Open`}
         android_ripple={{ color: live ? 'rgba(255,255,255,0.12)' : colors.line }}
         style={({ pressed }) => [
           styles.card,
@@ -68,7 +89,7 @@ export function RideCard({ ride, index = 0 }: { ride: MyRide; index?: number }) 
       >
         <View style={[styles.code, { backgroundColor: live ? 'rgba(0,0,0,0.22)' : colors.bg }]}>
           <Text style={[styles.codeText, { color: live ? colors.accent : colors.ink }]}>{code}</Text>
-          <Text style={[type.meta, { color: soft }]}>{live ? 'LIVE' : 'PAST'}</Text>
+          <Text style={[type.meta, { color: soft }]}>{badge}</Text>
         </View>
 
         <View style={styles.flex}>
@@ -82,6 +103,11 @@ export function RideCard({ ride, index = 0 }: { ride: MyRide; index?: number }) 
           <Text style={[type.bodySmall, { color: soft }]} numberOfLines={1}>
             from {ride.pickupName}
           </Text>
+          {money ? (
+            <Text style={[type.bodySmall, type.figure, { color: owing ? colors.danger : soft }]} numberOfLines={1}>
+              {money}
+            </Text>
+          ) : null}
           <View style={styles.foot}>
             <SeatStrip members={ride.members} onDark={live} />
             <Text style={[type.bodySmall, type.figure, { color: soft }]}>

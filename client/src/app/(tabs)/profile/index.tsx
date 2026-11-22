@@ -6,13 +6,11 @@ import type { AndroidSymbol } from 'expo-symbols';
 import { Button } from '@/components/Button';
 import { Icon } from '@/components/Icon';
 import { Pictogram } from '@/components/Pictogram';
-import { RideCard } from '@/components/RideCard';
-import { Bone, RideCardSkeleton, SkeletonCard } from '@/components/Skeleton';
+import { Bone, SkeletonCard } from '@/components/Skeleton';
 import { TextField } from '@/components/TextField';
 import { useSession } from '@/context/AuthContext';
 import { useTheme, type ThemePreference } from '@/context/ThemeContext';
 import { useMe, type ProfilePatch } from '@/hooks/useMe';
-import { useMyRides } from '@/hooks/useMyRides';
 import { ApiError } from '@/services/api';
 import { fonts, type } from '@/theme/type';
 
@@ -161,7 +159,6 @@ export default function Profile() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const { me, loading, error, update } = useMe();
-  const { rides, error: ridesError } = useMyRides();
   const { signOut } = useSession();
   const [editing, setEditing] = useState<Field | null>(null);
   const [signingOut, setSigningOut] = useState(false);
@@ -260,24 +257,6 @@ export default function Profile() {
         </Animated.View>
       ) : null}
 
-      <Animated.View entering={FadeInDown.delay(90).duration(280)} layout={LinearTransition.duration(220)} style={styles.section}>
-        <Text style={[type.title, { color: colors.ink }]}>Your rides</Text>
-        {ridesError ? (
-          <Text style={[type.bodySmall, { color: colors.danger }]}>{ridesError}</Text>
-        ) : rides === null ? (
-          [0, 1].map((i) => <RideCardSkeleton key={i} index={i} />)
-        ) : rides.length ? (
-          rides.map((ride, i) => <RideCard key={ride.id} ride={ride} index={i} />)
-        ) : (
-          <View style={[styles.noRides, { borderColor: colors.line }]}>
-            <Pictogram name="directions_car" size={36} />
-            <Text style={[type.bodySmall, styles.flex, { color: colors.muted }]}>
-              Groups you start or join show up here. Pick a destination on Home and tap Find riders.
-            </Text>
-          </View>
-        )}
-      </Animated.View>
-
       <Animated.View entering={FadeInDown.delay(120).duration(280)} layout={LinearTransition.duration(220)} style={styles.section}>
         <Text style={[type.title, { color: colors.ink }]}>Appearance</Text>
         <ThemePicker />
@@ -305,7 +284,6 @@ const styles = StyleSheet.create({
   editActions: { flexDirection: 'row', gap: 10 },
   skeletonLines: { gap: 8 },
   skeletonCard: { gap: 10, padding: 16 },
-  noRides: { flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 1.5, borderStyle: 'dashed', borderRadius: 12, padding: 16 },
   segments: { flexDirection: 'row', borderWidth: 1.5, borderRadius: 12, padding: 4, gap: 4 },
   segment: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 48, borderRadius: 8 },
 });
