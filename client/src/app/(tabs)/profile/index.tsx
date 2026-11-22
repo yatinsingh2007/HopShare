@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown, LinearTransition } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { AndroidSymbol } from 'expo-symbols';
@@ -7,6 +7,7 @@ import { Button } from '@/components/Button';
 import { Icon } from '@/components/Icon';
 import { Pictogram } from '@/components/Pictogram';
 import { RideCard } from '@/components/RideCard';
+import { Bone, RideCardSkeleton, SkeletonCard } from '@/components/Skeleton';
 import { TextField } from '@/components/TextField';
 import { useSession } from '@/context/AuthContext';
 import { useTheme, type ThemePreference } from '@/context/ThemeContext';
@@ -182,8 +183,20 @@ export default function Profile() {
 
   if (loading && !me) {
     return (
-      <View style={[styles.flex, styles.centered, { backgroundColor: colors.bg }]}>
-        <ActivityIndicator color={colors.muted} />
+      <View style={[styles.flex, styles.body, { backgroundColor: colors.bg, paddingTop: insets.top + 16 }]}>
+        <View style={styles.hero} accessible accessibilityLabel="Loading your profile">
+          <Bone width={68} height={68} radius={12} />
+          <View style={[styles.flex, styles.skeletonLines]}>
+            <Bone width="55%" height={28} />
+            <Bone width="70%" height={14} />
+          </View>
+        </View>
+        <SkeletonCard style={styles.skeletonCard}>
+          <Bone width="40%" height={14} />
+          <Bone width="80%" height={18} />
+          <Bone width="40%" height={14} />
+          <Bone width="65%" height={18} />
+        </SkeletonCard>
       </View>
     );
   }
@@ -252,7 +265,7 @@ export default function Profile() {
         {ridesError ? (
           <Text style={[type.bodySmall, { color: colors.danger }]}>{ridesError}</Text>
         ) : rides === null ? (
-          <ActivityIndicator style={styles.ridesLoading} color={colors.ink} />
+          [0, 1].map((i) => <RideCardSkeleton key={i} index={i} />)
         ) : rides.length ? (
           rides.map((ride, i) => <RideCard key={ride.id} ride={ride} index={i} />)
         ) : (
@@ -290,7 +303,8 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: 14, minHeight: 68, paddingHorizontal: 16 },
   editing: { padding: 16, gap: 14 },
   editActions: { flexDirection: 'row', gap: 10 },
-  ridesLoading: { paddingVertical: 16 },
+  skeletonLines: { gap: 8 },
+  skeletonCard: { gap: 10, padding: 16 },
   noRides: { flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 1.5, borderStyle: 'dashed', borderRadius: 12, padding: 16 },
   segments: { flexDirection: 'row', borderWidth: 1.5, borderRadius: 12, padding: 4, gap: 4 },
   segment: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 48, borderRadius: 8 },

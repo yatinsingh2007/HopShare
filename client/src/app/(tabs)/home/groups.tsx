@@ -1,19 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
-import Animated, {
-  FadeIn,
-  FadeInDown,
-  useAnimatedStyle,
-  useSharedValue,
-  withRepeat,
-  withTiming,
-} from 'react-native-reanimated';
+import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Button } from '@/components/Button';
 import { Icon } from '@/components/Icon';
 import { clock, groupCode, SeatStrip } from '@/components/RideCard';
 import { SignBand } from '@/components/SignBand';
+import { RideCardSkeleton } from '@/components/Skeleton';
 import { useSession } from '@/context/AuthContext';
 import { useMyRequests, type MyRequest } from '@/hooks/useMyRequests';
 import { useTheme } from '@/context/ThemeContext';
@@ -129,25 +123,6 @@ function GroupCard({ group, index, pending, asking, onAsk, onWithdraw }: {
       ) : (
         <Button label={`Ask ${creator} to join`} icon="person_add" variant="ghost" loading={asking} onPress={onAsk} />
       )}
-    </Animated.View>
-  );
-}
-
-function SkeletonCard({ index }: { index: number }) {
-  const { colors } = useTheme();
-  const pulse = useSharedValue(0.45);
-  useEffect(() => {
-    pulse.value = withRepeat(withTiming(1, { duration: 800 }), -1, true);
-  }, [pulse]);
-  const style = useAnimatedStyle(() => ({ opacity: pulse.value }));
-  return (
-    <Animated.View
-      entering={FadeIn.delay(index * 80)}
-      style={[styles.card, styles.skeleton, { backgroundColor: colors.card, borderColor: colors.line }, style]}
-    >
-      <View style={[styles.bar, { width: '38%', height: 34, backgroundColor: colors.line }]} />
-      <View style={[styles.bar, { width: '72%', backgroundColor: colors.line }]} />
-      <View style={[styles.bar, { width: '56%', backgroundColor: colors.line }]} />
     </Animated.View>
   );
 }
@@ -303,7 +278,7 @@ export default function Groups() {
         </Animated.View>
       );
     }
-    if (loading) return [0, 1, 2].map((i) => <SkeletonCard key={i} index={i} />);
+    if (loading) return [0, 1, 2].map((i) => <RideCardSkeleton key={i} index={i} />);
     if (none) {
       return (
         <Animated.View entering={FadeIn.duration(240)} style={styles.message}>
@@ -422,8 +397,6 @@ const styles = StyleSheet.create({
   stopSquare: { width: 14, height: 14, borderRadius: 3 },
   walk: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   waiting: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 56, paddingLeft: 12, borderRadius: 8 },
-  skeleton: { gap: 12 },
-  bar: { height: 14, borderRadius: 4 },
   message: { gap: 8, paddingVertical: 8 },
   retry: { marginTop: 12 },
   footer: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 16, gap: 8, borderTopWidth: 1 },
