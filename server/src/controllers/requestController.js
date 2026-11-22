@@ -1,6 +1,7 @@
 const { randomUUID } = require('node:crypto');
 const prisma = require('../config/db');
 const { MAX_MEMBERS, point, readPlace, activeRideOf } = require('./rideController');
+const { emitToUser, rideChanged } = require('../socket');
 
 const notFound = (res) => res.status(404).json({ success: false, message: 'Ride not found.' });
 const isLive = (ride) => ride.time.getTime() > Date.now() - 5 * 60_000;
@@ -57,6 +58,7 @@ const requestToJoin = async (req, res) => {
     VALUES (${id}, ${ride.id}, ${req.user.id}, ${point(pickup)}, ${pickup.name.slice(0, 200)},
             ${point(destination)}, ${destination.name.slice(0, 200)})`;
 
+  emitToUser(ride.rideCreatorId, 'requests:updated', { rideId: ride.id, firstName: req.user.name });
   res.status(201).json({ success: true, data: { id, rideId: ride.id, status: 'PENDING' } });
 };
 
@@ -139,7 +141,11 @@ const acceptRequest = async (req, res) => {
       where: { id: request.id },
       data: { status: 'ACCEPTED', respondedAt: new Date() },
     });
-    // their other pending requests lose
+    // their other pending requests lose; those groups' creators get a fresh list
+    const lost = await tx.joinRequest.findMany({
+      where: { userId: request.userId, status: 'PENDING', id: { not: request.id } },
+      select: { ride: { select: { rideCreatorId: true, id: true } } },
+    });
     await tx.joinRequest.updateMany({
       where: {
         userId: request.userId,
@@ -150,7 +156,9 @@ const acceptRequest = async (req, res) => {
     });
 
     const full = members._count.users + 1 >= MAX_MEMBERS;
+    let crowdedOut = [];
     if (full) {
+      crowdedOut = await tx.joinRequest.findMany({ where: { rideId, status: 'PENDING' }, select: { userId: true } });
       await tx.ride.update({
         where: { id: rideId },
         data: { joinable: false },
@@ -160,7 +168,7 @@ const acceptRequest = async (req, res) => {
         data: { status: 'CANCELLED', respondedAt: new Date() },
       });
     }
-    return { members: members._count.users + 1, full };
+    return { members: members._count.users + 1, full, requesterId: request.userId, lost, crowdedOut };
   });
 
   if (result.taken) {
@@ -173,13 +181,18 @@ const acceptRequest = async (req, res) => {
       message: 'This rider has already joined another group.',
     });
   }
+  const { requesterId, lost, crowdedOut, ...data } = result;
+  emitToUser(requesterId, 'request:answered', { rideId, status: 'ACCEPTED' });
+  for (const { ride } of lost) emitToUser(ride.rideCreatorId, 'requests:updated', { rideId: ride.id });
+  for (const { userId } of crowdedOut) emitToUser(userId, 'request:answered', { rideId, status: 'CANCELLED' });
+  rideChanged(rideId);
   res.json({
     success: true,
     data: {
       requestId,
       status: 'ACCEPTED',
-      ...result,
-      seatsLeft: MAX_MEMBERS - result.members,
+      ...data,
+      seatsLeft: MAX_MEMBERS - data.members,
     },
   });
 };
@@ -202,6 +215,8 @@ const rejectRequest = async (req, res) => {
       success: false,
       message: 'This request was withdrawn or already answered.',
     });
+  const { userId } = await prisma.joinRequest.findUnique({ where: { id: requestId }, select: { userId: true } });
+  emitToUser(userId, 'request:answered', { rideId, status: 'REJECTED' });
   res.json({ success: true, data: { requestId, status: 'REJECTED' } });
 };
 
@@ -213,6 +228,8 @@ const cancelRequest = async (req, res) => {
     data: { status: 'CANCELLED', respondedAt: new Date() },
   });
   if (!count) return res.status(409).json({ success: false, message: 'This request was already answered.' });
+  const ride = await prisma.ride.findUnique({ where: { id: rideId }, select: { rideCreatorId: true } });
+  if (ride) emitToUser(ride.rideCreatorId, 'requests:updated', { rideId });
   res.json({ success: true, data: { requestId, status: 'CANCELLED' } });
 };
 
