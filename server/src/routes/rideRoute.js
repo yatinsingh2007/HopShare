@@ -1,5 +1,5 @@
 const { Router } = require('express');
-const { matchRides, createRide, myRides, getRide } = require('../controllers/rideController');
+const { matchRides, createRide, myRides, getRide, markBooked } = require('../controllers/rideController');
 const {
   requestToJoin,
   listRequests,
@@ -16,6 +16,7 @@ router.get('/mine', myRides);
 router.get('/requests/mine', myRequests);
 router.get('/:id', getRide);
 router.post('/', createRide);
+router.post('/:id/booked', markBooked);
 router.post('/:id/requests', requestToJoin);
 router.get('/:id/requests', listRequests);
 router.post('/:id/requests/:requestId/accept', acceptRequest);
