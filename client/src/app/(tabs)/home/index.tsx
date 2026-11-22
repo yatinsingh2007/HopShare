@@ -40,6 +40,8 @@ import {
   getRecentDestinations,
   inRideRange,
   MAX_RIDE_KM,
+  MIN_RIDE_KM,
+  tooCloseForRide,
   nearbyStations,
   nameForPoint,
   saveRecentDestination,
@@ -265,7 +267,7 @@ export default function Home() {
   };
 
   const findRiders = async () => {
-    if (!pickup || !destination || !inRideRange(pickup, destination)) return;
+    if (!pickup || !destination || !inRideRange(pickup, destination) || tooCloseForRide(pickup, destination)) return;
     // "Current location" means nothing to other riders, so send the street we found for the GPS point.
     const place = ({ id, latitude, longitude, name, detail }: PlaceResult) =>
       JSON.stringify({
@@ -300,6 +302,7 @@ export default function Home() {
   // How far the destination is from the pickup, worked out fresh so it follows pickup changes.
   const distance = pickup && destination ? distanceBetween(pickup, destination) : null;
   const tooFar = !inRideRange(pickup, destination);
+  const tooClose = tooCloseForRide(pickup, destination);
   // when picking one end, only offer places within range of the other end
   const otherEnd = active === 'pickup' ? destination : pickup;
   const shownResults = results.filter((p) => inRideRange(otherEnd, p));
@@ -548,12 +551,20 @@ export default function Home() {
               >
                 {distance} is too far. Rides go up to {MAX_RIDE_KM} km, so pick a closer destination.
               </Animated.Text>
+            ) : tooClose ? (
+              <Animated.Text
+                entering={FadeIn.duration(160)}
+                accessibilityLiveRegion="polite"
+                style={[type.bodySmall, styles.tooFar, { color: colors.danger }]}
+              >
+                Your destination is only {distance} away, which is walking distance. Rides start from {MIN_RIDE_KM} km.
+              </Animated.Text>
             ) : null}
             <Button
               label="Find riders"
               icon="group"
               onPress={findRiders}
-              disabled={!pickup || !destination || tooFar}
+              disabled={!pickup || !destination || tooFar || tooClose}
             />
           </Animated.View>
         </>
