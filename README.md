@@ -49,6 +49,8 @@ Each part of the design below is marked **Built**, **Planned** (decided, not cod
 | Matched groups screen, join requests, 1 km matching | Next |
 | Google sign-in | Later |
 | Live location, group updates (Socket.io) | Done (foreground only) |
+| Tabs: Rides, Payments, Safety; Activity feed (bell on Home) | Done |
+| SOS, trusted contacts, public trip-share link | Done |
 | Redis | Later, only when we run more than one server |
 | Fare split and UPI payback | Done |
 | DigiLocker verification | Planned |
@@ -214,7 +216,7 @@ flowchart TD
     Home --> Profile[Profile tab<br/>name, UPI ID, theme, sign out]
 ```
 
-Navigation is kept simple: a root `Stack`, a `Tabs` bar (Home, Profile), and a `Stack` inside each tab. Built so far: Welcome, Sign in, Profile setup, Home.
+Navigation is kept simple: a root `Stack`, a `Tabs` bar with five tabs (**Home · Rides · Payments · Safety · Profile**), and a `Stack` inside each tab. Activity opens from the bell on Home. Built: Welcome, Sign in, Profile setup, Home, Matched groups, Activity, the ride screen, and every tab.
 
 ## 4. Sign-in and tokens
 
@@ -456,7 +458,7 @@ When the booker taps **Cab booked** (`POST /api/rides/:id/booked`), they can add
 
 ## 10. Safety
 
-**Planned.**
+**Built: SOS, trusted contacts, Share trip** (Safety tab, `server/src/controllers/safetyController.js`). SOS (hold 3 s) logs a `SafetyReport`, makes a trip-share link for the live ride, then offers **Call 112** and **Text contacts** (the SMS app opens with the link). Up to 3 trusted contacts (Indian mobile numbers). **Share live trip** creates a `TripShare` with a random token: `/trip/<token>` is a public page (MapLibre, polls `/api/trip/<token>` every 5 s) showing only first name, destination, cab number and position; it stops when the rider stops it, the ride ends, or after 4 hours. Set `PUBLIC_URL` on the server so links use the public address. Location is sent only while the app is open (ride screen or Safety tab). **Still planned:** DigiLocker verification, photo badge, feedback.
 
 ```mermaid
 flowchart LR

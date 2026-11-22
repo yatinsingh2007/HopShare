@@ -47,6 +47,10 @@ model User {
   paymentsSent     Payment[]     @relation("PaymentFrom")
   paymentsReceived Payment[]     @relation("PaymentTo")
   joinRequests     JoinRequest[]
+  activities       Activity[]
+  trustedContacts  TrustedContact[]
+  safetyReports    SafetyReport[]
+  tripShares       TripShare[]
 }
 
 model Ride {
@@ -78,6 +82,8 @@ model Ride {
   chat         Chat?
   payments     Payment[]
   joinRequests JoinRequest[]
+  safetyReports SafetyReport[]
+  tripShares   TripShare[]
 }
 
 model Chat {
@@ -149,4 +155,65 @@ model JoinRequest {
 
   ride Ride @relation(fields: [rideId], references: [id], onDelete: Cascade)
   user User @relation(fields: [userId], references: [id])
+}
+
+// What happened, for the Activity feed behind the bell on Home.
+// Written alongside the socket event, so it survives the app being closed.
+model Activity {
+  id        String    @id @default(uuid())
+  userId    String
+  // request_new, request_accepted, request_closed, cab_booked, payment_due, payment_claimed, payment_confirmed
+  kind      String
+  rideId    String?
+  text      String
+  createdAt DateTime  @default(now())
+  readAt    DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+// People a rider's SOS text goes to. Up to 3; only the rider sees them.
+model TrustedContact {
+  id        String   @id @default(uuid())
+  userId    String
+  name      String
+  // 10-digit Indian mobile number, stored as +91XXXXXXXXXX
+  phone     String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, phone])
+}
+
+// Moderation: an SOS (later also reports and disputes). No admin UI in v1.
+model SafetyReport {
+  id        String   @id @default(uuid())
+  userId    String
+  rideId    String?
+  kind      String
+  createdAt DateTime @default(now())
+
+  user User  @relation(fields: [userId], references: [id])
+  ride Ride? @relation(fields: [rideId], references: [id], onDelete: SetNull)
+}
+
+// A public live-location link for one rider on one ride. Dies when the rider stops it,
+// when the ride ends, or at expiresAt, whichever comes first.
+model TripShare {
+  id        String    @id @default(uuid())
+  // the secret part of the public link
+  token     String    @unique
+  userId    String
+  rideId    String
+  createdAt DateTime  @default(now())
+  expiresAt DateTime
+  stoppedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ride Ride @relation(fields: [rideId], references: [id], onDelete: Cascade)
+
+  @@index([rideId])
 }

@@ -33,6 +33,8 @@ type Ride = {
   booking: Booking | null;
   stage: Stage;
   fare: Fare | null;
+  /** I'm sending a public live link for this ride (Safety tab). */
+  sharingTrip: boolean;
 };
 
 type JoinRequest = {
@@ -155,8 +157,8 @@ function OpenSeat({ index }: { index: number }) {
  */
 function LiveRideMap({ ride, extra }: { ride: Ride; extra: Place | null }) {
   const { colors } = useTheme();
-  // from cab booked until picked up
-  const share = ride.stage === 'booked';
+  // the group shares from cab booked until picked up; a trip-share link keeps mine going after pickup
+  const share = ride.stage === 'booked' || (ride.sharingTrip && ride.stage === 'picked_up');
   const { positions, denied } = useLiveRide(ride.id, share);
 
   const riders = useMemo(
@@ -187,7 +189,11 @@ function LiveRideMap({ ride, extra }: { ride: Ride; extra: Place | null }) {
         >
           <View style={[styles.liveDot, { backgroundColor: denied ? colors.danger : colors.success }]} />
           <Text style={[type.bodySmall, { color: colors.ink }]}>
-            {denied ? 'Location off · the group can\u2019t see you' : `Live · ${riders.length} of ${ride.members.length - 1} on the map`}
+            {denied
+              ? 'Location off · the group can\u2019t see you'
+              : ride.stage === 'picked_up'
+                ? 'Sharing your live trip link'
+                : `Live · ${riders.length} of ${ride.members.length - 1} on the map`}
           </Text>
         </Animated.View>
       ) : null}

@@ -1,7 +1,7 @@
 const { randomUUID } = require('node:crypto');
 const { Prisma } = require('../../generated/prisma');
 const prisma = require('../config/db');
-const { emitToUser, rideChanged } = require('../socket');
+const { rideChanged, tell } = require('../socket');
 const { isLiveRide, stageOf, liveRideWhere } = require('../rideState');
 
 const MATCH_METRES = 1000;
@@ -144,7 +144,12 @@ const myRides = async (req, res) => {
       time: true,
       rideCreatorId: true,
       bookedAt: true,
+      pickedUpAt: true,
       endedAt: true,
+      farePaise: true,
+      paymentStatus: true,
+      // my share, if I owe the booker
+      payments: { where: { fromId: req.user.id }, select: { amountPaise: true, status: true } },
       _count: { select: { users: true } },
     },
     orderBy: { time: 'desc' },
@@ -162,6 +167,10 @@ const myRides = async (req, res) => {
       seatsLeft: MAX_MEMBERS - r._count.users,
       isCreator: r.rideCreatorId === req.user.id,
       live: isLiveRide(r),
+      stage: stageOf(r),
+      farePaise: r.farePaise,
+      settled: r.paymentStatus === 'PAID',
+      myShare: r.payments[0] ?? null,
     })),
   });
 };
@@ -188,6 +197,11 @@ const getRide = async (req, res) => {
       payments: {
         select: { id: true, fromId: true, amountPaise: true, status: true, claimedAt: true },
         orderBy: { createdAt: 'asc' },
+      },
+      tripShares: {
+        where: { userId: req.user.id, stoppedAt: null, expiresAt: { gt: new Date() } },
+        select: { token: true },
+        take: 1,
       },
     },
   });
@@ -224,6 +238,8 @@ const getRide = async (req, res) => {
           }
         : null,
       fare: ride.endedAt ? fareView(ride, members, req.user.id) : null,
+      // am I sending a public live link for this ride?
+      sharingTrip: !ride.endedAt && ride.tripShares.length > 0,
     },
   });
 };
@@ -279,7 +295,7 @@ const markBooked = async (req, res) => {
 
   const ride = await prisma.ride.findFirst({
     where: { id: req.params.id, users: { some: { id: req.user.id } } },
-    select: { id: true, time: true, rideCreatorId: true, bookedAt: true },
+    select: { id: true, time: true, rideCreatorId: true, bookedAt: true, destinationName: true, users: { select: { id: true } } },
   });
   if (!ride) return res.status(404).json({ success: false, message: 'Ride not found.' });
   if (ride.rideCreatorId !== req.user.id) {
@@ -305,7 +321,21 @@ const markBooked = async (req, res) => {
     }),
   ]);
 
-  for (const { userId } of crowdedOut) emitToUser(userId, 'request:answered', { rideId: ride.id, status: 'CANCELLED' });
+  for (const { userId } of crowdedOut) {
+    tell(userId, 'request:answered', { rideId: ride.id, status: 'CANCELLED' }, {
+      kind: 'request_closed',
+      text: `The group to ${ride.destinationName} booked its cab, so your request was closed`,
+    });
+  }
+  // first booking only: tell the others the cab is on its way
+  if (!ride.bookedAt) {
+    for (const { id } of ride.users.filter((u) => u.id !== req.user.id)) {
+      tell(id, 'cab:booked', { rideId: ride.id }, {
+        kind: 'cab_booked',
+        text: `${req.user.name ?? 'Your booker'} booked the cab to ${ride.destinationName}`,
+      });
+    }
+  }
   rideChanged(ride.id);
   res.json({
     success: true,

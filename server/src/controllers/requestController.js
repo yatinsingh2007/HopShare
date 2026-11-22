@@ -1,7 +1,7 @@
 const { randomUUID } = require('node:crypto');
 const prisma = require('../config/db');
 const { MAX_MEMBERS, TOO_FAR, tooFar, point, readPlace, activeRideOf } = require('./rideController');
-const { emitToUser, rideChanged } = require('../socket');
+const { emitToUser, rideChanged, tell } = require('../socket');
 
 const notFound = (res) => res.status(404).json({ success: false, message: 'Ride not found.' });
 const isLive = (ride) => ride.time.getTime() > Date.now() - 5 * 60_000;
@@ -22,6 +22,7 @@ const requestToJoin = async (req, res) => {
       time: true,
       joinable: true,
       rideCreatorId: true,
+      destinationName: true,
       _count: { select: { users: true } },
     },
   });
@@ -59,7 +60,10 @@ const requestToJoin = async (req, res) => {
     VALUES (${id}, ${ride.id}, ${req.user.id}, ${point(pickup)}, ${pickup.name.slice(0, 200)},
             ${point(destination)}, ${destination.name.slice(0, 200)})`;
 
-  emitToUser(ride.rideCreatorId, 'requests:updated', { rideId: ride.id, firstName: req.user.name });
+  tell(ride.rideCreatorId, 'requests:updated', { rideId: ride.id, firstName: req.user.name }, {
+    kind: 'request_new',
+    text: `${req.user.name ?? 'A rider'} wants to join your group to ${ride.destinationName}`,
+  });
   res.status(201).json({ success: true, data: { id, rideId: ride.id, status: 'PENDING' } });
 };
 
@@ -118,7 +122,7 @@ const acceptRequest = async (req, res) => {
   const { id: rideId, requestId } = req.params;
   const result = await prisma.$transaction(async (tx) => {
     const [ride] = await tx.$queryRaw`
-        SELECT id, time, joinable, "rideCreatorId" FROM "Ride" WHERE id = ${rideId} FOR UPDATE`;
+        SELECT id, time, joinable, "rideCreatorId", "destinationName" FROM "Ride" WHERE id = ${rideId} FOR UPDATE`;
     if (!ride || ride.rideCreatorId !== req.user.id) throw new Refused(404, 'Ride not found.');
     if (!isLive(ride) || !ride.joinable) throw new Refused(409, 'This group has already left or is closed.');
 
@@ -169,7 +173,7 @@ const acceptRequest = async (req, res) => {
         data: { status: 'CANCELLED', respondedAt: new Date() },
       });
     }
-    return { members: members._count.users + 1, full, requesterId: request.userId, lost, crowdedOut };
+    return { members: members._count.users + 1, full, requesterId: request.userId, lost, crowdedOut, to: ride.destinationName };
   });
 
   if (result.taken) {
@@ -182,10 +186,18 @@ const acceptRequest = async (req, res) => {
       message: 'This rider has already joined another group.',
     });
   }
-  const { requesterId, lost, crowdedOut, ...data } = result;
-  emitToUser(requesterId, 'request:answered', { rideId, status: 'ACCEPTED' });
+  const { requesterId, lost, crowdedOut, to, ...data } = result;
+  tell(requesterId, 'request:answered', { rideId, status: 'ACCEPTED' }, {
+    kind: 'request_accepted',
+    text: `You're in ${req.user.name ?? 'the'}${req.user.name ? "'s" : ''} group to ${to}`,
+  });
   for (const { ride } of lost) emitToUser(ride.rideCreatorId, 'requests:updated', { rideId: ride.id });
-  for (const { userId } of crowdedOut) emitToUser(userId, 'request:answered', { rideId, status: 'CANCELLED' });
+  for (const { userId } of crowdedOut) {
+    tell(userId, 'request:answered', { rideId, status: 'CANCELLED' }, {
+      kind: 'request_closed',
+      text: `The group to ${to} filled up, so your request was closed`,
+    });
+  }
   rideChanged(rideId);
   res.json({
     success: true,
@@ -203,7 +215,7 @@ const rejectRequest = async (req, res) => {
   const { id: rideId, requestId } = req.params;
   const ride = await prisma.ride.findUnique({
     where: { id: rideId },
-    select: { rideCreatorId: true },
+    select: { rideCreatorId: true, destinationName: true },
   });
   if (!ride || ride.rideCreatorId !== req.user.id) return notFound(res);
 
@@ -217,7 +229,10 @@ const rejectRequest = async (req, res) => {
       message: 'This request was withdrawn or already answered.',
     });
   const { userId } = await prisma.joinRequest.findUnique({ where: { id: requestId }, select: { userId: true } });
-  emitToUser(userId, 'request:answered', { rideId, status: 'REJECTED' });
+  tell(userId, 'request:answered', { rideId, status: 'REJECTED' }, {
+    kind: 'request_closed',
+    text: `Your request to join the group to ${ride.destinationName} wasn't accepted`,
+  });
   res.json({ success: true, data: { requestId, status: 'REJECTED' } });
 };
 
