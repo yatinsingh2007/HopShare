@@ -1,6 +1,6 @@
 const { randomUUID } = require('node:crypto');
 const prisma = require('../config/db');
-const { MAX_MEMBERS, TOO_FAR, tooFar, point, readPlace, activeRideOf } = require('./rideController');
+const { MAX_MEMBERS, rideDistanceError, point, readPlace, activeRideOf } = require('./rideController');
 const { emitToUser, rideChanged, tell } = require('../socket');
 
 const notFound = (res) => res.status(404).json({ success: false, message: 'Ride not found.' });
@@ -13,7 +13,8 @@ const requestToJoin = async (req, res) => {
   if (!pickup?.name || !destination?.name) {
     return res.status(400).json({ success: false, message: 'Pickup and destination are needed.' });
   }
-  if (tooFar(pickup, destination)) return res.status(400).json({ success: false, message: TOO_FAR });
+  const distanceError = rideDistanceError(pickup, destination);
+  if (distanceError) return res.status(400).json({ success: false, message: distanceError });
 
   const ride = await prisma.ride.findUnique({
     where: { id: req.params.id },

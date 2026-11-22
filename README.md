@@ -30,7 +30,7 @@ That changes the hard problems:
 ### Rules the product keeps
 
 - **Value before verification:** anyone can browse groups; ID verification is asked for only when joining or starting one.
-- **City rides only:** a ride's destination can be at most 70 km (straight line) from its pickup. The app only offers places in range, and the server refuses anything further.
+- **City rides only:** a ride's destination must be 1–70 km (straight line) from its pickup. Under 1 km is walking distance; past 70 km isn't a city cab. The app hides places over 70 km and blocks Find riders under 1 km, and the server refuses both.
 - **Privacy by default:** other riders see only first name, photo and badges. Never phone number, last name, address or regular routes.
 - **No fake profiles:** every rider is ID-verified before their first shared ride, and the server (not the app) enforces it.
 - **Not in v1:** in-app cab booking, a payment gateway, drivers, uneven (distance-based) splits.

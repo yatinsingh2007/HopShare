@@ -55,10 +55,12 @@ export const kmBetween = (a: Place, b: Place) => {
   return 2 * 6371 * Math.asin(Math.sqrt(h));
 };
 
-// HopShare is for shared city cabs: a ride's drop can be at most this far (straight line) from its pickup.
-// The server enforces the same limit.
+// HopShare is for shared city cabs: a ride's drop must be 1–70 km (straight line) from its pickup.
+// Under 1 km is walking distance. The server enforces the same limits.
+export const MIN_RIDE_KM = 1;
 export const MAX_RIDE_KM = 70;
 export const inRideRange = (a: Place | null, b: Place | null) => !a || !b || kmBetween(a, b) <= MAX_RIDE_KM;
+export const tooCloseForRide = (a: Place | null, b: Place | null) => !!a && !!b && kmBetween(a, b) < MIN_RIDE_KM;
 
 // Straight-line distance as "850 m" or "3.4 km".
 const formatKm = (km: number) => (km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`);
