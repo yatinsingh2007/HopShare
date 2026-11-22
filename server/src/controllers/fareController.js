@@ -1,5 +1,7 @@
 const prisma = require('../config/db');
-const { emitToUser, rideChanged } = require('../socket');
+const { rideChanged, tell } = require('../socket');
+
+const inr = (paise) => `₹${(paise / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 const { stageOf } = require('../rideState');
 
 const MAX_FARE_RUPEES = 20_000;
@@ -18,6 +20,7 @@ const rideFor = (rideId, userId) =>
       pickedUpAt: true,
       endedAt: true,
       rideCreatorId: true,
+      destinationName: true,
       rideCreator: { select: { name: true, upiId: true } },
       users: { select: { id: true } },
     },
@@ -80,7 +83,10 @@ const setFare = async (req, res) => {
   ]);
 
   for (const userId of payers) {
-    emitToUser(userId, 'payment:due', { rideId: ride.id, amountPaise: sharePaise, bookerName: ride.rideCreator.name });
+    tell(userId, 'payment:due', { rideId: ride.id, amountPaise: sharePaise, bookerName: ride.rideCreator.name }, {
+      kind: 'payment_due',
+      text: `Pay ${ride.rideCreator.name ?? 'your booker'} ${inr(sharePaise)} for the ride to ${ride.destinationName}`,
+    });
   }
   rideChanged(ride.id);
   res.json({ success: true, data: { farePaise, sharePaise, riders: payers.length + 1 } });
@@ -94,12 +100,15 @@ const claimPayment = async (req, res) => {
   });
   const payment = await prisma.payment.findFirst({
     where: { id: req.params.paymentId, rideId: req.params.id, fromId: req.user.id },
-    select: { toId: true, amountPaise: true },
+    select: { toId: true, amountPaise: true, ride: { select: { destinationName: true } } },
   });
   if (!payment) return refuse(res, 404, 'Payment not found.');
   if (!count) return refuse(res, 409, 'This payment is already marked.');
 
-  emitToUser(payment.toId, 'payment:claimed', { rideId: req.params.id, firstName: req.user.name, amountPaise: payment.amountPaise });
+  tell(payment.toId, 'payment:claimed', { rideId: req.params.id, firstName: req.user.name, amountPaise: payment.amountPaise }, {
+    kind: 'payment_claimed',
+    text: `${req.user.name ?? 'A rider'} marked ${inr(payment.amountPaise)} as paid. Check your UPI app`,
+  });
   rideChanged(req.params.id);
   res.json({ success: true, data: { id: req.params.paymentId, claimed: true } });
 };
@@ -107,7 +116,7 @@ const claimPayment = async (req, res) => {
 // POST /api/rides/:id/payments/:paymentId/confirm — the booker got the money; when all are in, the ride is settled
 const confirmPayment = async (req, res) => {
   const rideId = req.params.id;
-  const settled = await prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const { count } = await tx.payment.updateMany({
       where: { id: req.params.paymentId, rideId, toId: req.user.id, status: 'PENDING' },
       data: { status: 'PAID' },
@@ -115,15 +124,20 @@ const confirmPayment = async (req, res) => {
     if (!count) return null;
     const left = await tx.payment.count({ where: { rideId, status: 'PENDING' } });
     if (!left) await tx.ride.update({ where: { id: rideId }, data: { paymentStatus: 'PAID' } });
-    return !left;
+    const { fromId, amountPaise } = await tx.payment.findUnique({ where: { id: req.params.paymentId }, select: { fromId: true, amountPaise: true } });
+    return { settled: !left, fromId, amountPaise };
   });
-  if (settled === null) {
+  if (result === null) {
     const exists = await prisma.payment.count({ where: { id: req.params.paymentId, rideId, toId: req.user.id } });
     return exists ? refuse(res, 409, 'This payment is already confirmed.') : refuse(res, 404, 'Payment not found.');
   }
 
+  tell(result.fromId, 'payment:confirmed', { rideId, firstName: req.user.name }, {
+    kind: 'payment_confirmed',
+    text: `${req.user.name ?? 'Your booker'} got your ${inr(result.amountPaise)}. You're all square`,
+  });
   rideChanged(rideId);
-  res.json({ success: true, data: { id: req.params.paymentId, status: 'PAID', settled } });
+  res.json({ success: true, data: { id: req.params.paymentId, status: 'PAID', settled: result.settled } });
 };
 
 // GET /api/me/payments — every payment I'm part of: what I owe bookers and what riders owe me

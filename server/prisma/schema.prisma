@@ -47,6 +47,7 @@ model User {
   paymentsSent     Payment[]     @relation("PaymentFrom")
   paymentsReceived Payment[]     @relation("PaymentTo")
   joinRequests     JoinRequest[]
+  activities       Activity[]
 }
 
 model Ride {
@@ -150,3 +151,21 @@ model JoinRequest {
   ride Ride @relation(fields: [rideId], references: [id], onDelete: Cascade)
   user User @relation(fields: [userId], references: [id])
 }
+
+// What happened, for the Activity feed behind the bell on Home.
+// Written alongside the socket event, so it survives the app being closed.
+model Activity {
+  id        String    @id @default(uuid())
+  userId    String
+  // request_new, request_accepted, request_closed, cab_booked, payment_due, payment_claimed, payment_confirmed
+  kind      String
+  rideId    String?
+  text      String
+  createdAt DateTime  @default(now())
+  readAt    DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+

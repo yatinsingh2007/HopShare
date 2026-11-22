@@ -1,7 +1,7 @@
 const { randomUUID } = require('node:crypto');
 const { Prisma } = require('../../generated/prisma');
 const prisma = require('../config/db');
-const { emitToUser, rideChanged } = require('../socket');
+const { rideChanged, tell } = require('../socket');
 const { isLiveRide, stageOf, liveRideWhere } = require('../rideState');
 
 const MATCH_METRES = 1000;
@@ -274,7 +274,7 @@ const markBooked = async (req, res) => {
 
   const ride = await prisma.ride.findFirst({
     where: { id: req.params.id, users: { some: { id: req.user.id } } },
-    select: { id: true, time: true, rideCreatorId: true, bookedAt: true },
+    select: { id: true, time: true, rideCreatorId: true, bookedAt: true, destinationName: true, users: { select: { id: true } } },
   });
   if (!ride) return res.status(404).json({ success: false, message: 'Ride not found.' });
   if (ride.rideCreatorId !== req.user.id) {
@@ -300,7 +300,21 @@ const markBooked = async (req, res) => {
     }),
   ]);
 
-  for (const { userId } of crowdedOut) emitToUser(userId, 'request:answered', { rideId: ride.id, status: 'CANCELLED' });
+  for (const { userId } of crowdedOut) {
+    tell(userId, 'request:answered', { rideId: ride.id, status: 'CANCELLED' }, {
+      kind: 'request_closed',
+      text: `The group to ${ride.destinationName} booked its cab, so your request was closed`,
+    });
+  }
+  // first booking only: tell the others the cab is on its way
+  if (!ride.bookedAt) {
+    for (const { id } of ride.users.filter((u) => u.id !== req.user.id)) {
+      tell(id, 'cab:booked', { rideId: ride.id }, {
+        kind: 'cab_booked',
+        text: `${req.user.name ?? 'Your booker'} booked the cab to ${ride.destinationName}`,
+      });
+    }
+  }
   rideChanged(ride.id);
   res.json({
     success: true,

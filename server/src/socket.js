@@ -106,4 +106,13 @@ const rideChanged = (rideId) => {
   io?.to(`ride:${rideId}`).emit('ride:updated', { rideId });
 };
 
-module.exports = { attachSocket, emitToUser, rideChanged };
+// emits the event and keeps a line for the user's Activity feed; a failed write never breaks the request
+const tell = (userId, event, data, { kind, text }) => {
+  emitToUser(userId, event, data);
+  prisma.activity
+    .create({ data: { userId, kind, rideId: data?.rideId ?? null, text } })
+    .then(() => emitToUser(userId, 'activity:new', { kind }))
+    .catch(() => {});
+};
+
+module.exports = { attachSocket, emitToUser, rideChanged, tell };

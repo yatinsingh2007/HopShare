@@ -22,6 +22,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 import { router } from 'expo-router';
 import type { AndroidSymbol } from 'expo-symbols';
+import { ActivityBell } from '@/components/ActivityBell';
 import { Button } from '@/components/Button';
 import { Icon } from '@/components/Icon';
 import { Pictogram } from '@/components/Pictogram';
@@ -446,6 +447,7 @@ export default function Home() {
                     {active === 'pickup' ? 'Pickup point' : 'Where to?'}
                   </Text>
                 </View>
+                {!active ? <ActivityBell /> : null}
                 {active ? (
                   <Pressable
                     onPress={close}

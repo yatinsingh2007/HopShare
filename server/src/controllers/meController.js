@@ -43,4 +43,24 @@ const updateMe = async (req, res) => {
   res.json({ success: true, data: toPublicMe(user) });
 };
 
-module.exports = { toPublicMe, getMe, updateMe };
+// GET /api/me/activity — the latest 50 things that happened to me, and how many are unread
+const myActivity = async (req, res) => {
+  const [items, unread] = await Promise.all([
+    prisma.activity.findMany({
+      where: { userId: req.user.id },
+      select: { id: true, kind: true, rideId: true, text: true, createdAt: true, readAt: true },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    }),
+    prisma.activity.count({ where: { userId: req.user.id, readAt: null } }),
+  ]);
+  res.json({ success: true, data: { items, unread } });
+};
+
+// POST /api/me/activity/read — opening the feed marks everything read
+const readActivity = async (req, res) => {
+  await prisma.activity.updateMany({ where: { userId: req.user.id, readAt: null }, data: { readAt: new Date() } });
+  res.json({ success: true, data: { unread: 0 } });
+};
+
+module.exports = { toPublicMe, getMe, updateMe, myActivity, readActivity };
