@@ -5,12 +5,12 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SplashScreen from 'expo-splash-screen';
 import { useFonts } from 'expo-font';
 import {
-  Mukta_400Regular,
-  Mukta_500Medium,
-  Mukta_600SemiBold,
-  Mukta_700Bold,
-  Mukta_800ExtraBold,
-} from '@expo-google-fonts/mukta';
+  Manrope_400Regular,
+  Manrope_500Medium,
+  Manrope_600SemiBold,
+  Manrope_700Bold,
+  Manrope_800ExtraBold,
+} from '@expo-google-fonts/manrope';
 import { ClerkProvider } from '@clerk/expo';
 import { tokenCache } from '@clerk/expo/token-cache';
 import { ThemeContext, type ThemePreference } from '@/context/ThemeContext';
@@ -51,11 +51,11 @@ function RootStack() {
 export default function RootLayout() {
   // If the font fails to load, render anyway with the system face rather than hang on the splash.
   const [fontsLoaded, fontError] = useFonts({
-    Mukta_400Regular,
-    Mukta_500Medium,
-    Mukta_600SemiBold,
-    Mukta_700Bold,
-    Mukta_800ExtraBold,
+    Manrope_400Regular,
+    Manrope_500Medium,
+    Manrope_600SemiBold,
+    Manrope_700Bold,
+    Manrope_800ExtraBold,
   });
   const ready = fontsLoaded || !!fontError;
 
