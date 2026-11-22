@@ -49,7 +49,8 @@ Each part of the design below is marked **Built**, **Planned** (decided, not cod
 | Google sign-in | Later |
 | Live location, group updates (Socket.io) | Done (foreground only) |
 | Redis | Later, only when we run more than one server |
-| DigiLocker verification, fare split and UPI payback | Planned |
+| Fare split and UPI payback | Done |
+| DigiLocker verification | Planned |
 
 ## Tech stack
 
@@ -477,7 +478,7 @@ flowchart LR
 
 ## 11. Fare split and payback
 
-**Planned.**
+**Built** (`server/src/controllers/fareController.js`, `client/src/components/FareSplit.tsx`). The booker taps **Picked up** (live location stops), then **We've arrived**: enters the fare and unticks anyone who didn't ride. `POST /api/rides/:id/fare` ends the ride and creates the payments; riders tap **Pay via UPI** (or copy the UPI ID) and **I've paid**; the booker taps **Got it** for each, and the ride is settled when all are in. A booked ride stays live for up to 3 hours after its leaving time (`server/src/rideState.js`), so a late cab or a long trip doesn't end it early. Not built yet: the "I'm in the cab" check-in and no-show marks (the booker's tick list stands in), and payment reminders.
 
 ```mermaid
 flowchart LR
@@ -490,7 +491,7 @@ flowchart LR
     D -- no --> Rem[Reminder after a few hours]
 ```
 
-- Even split, no-shows left out. Amounts are worked out in paise (integers) to avoid rounding errors. **Proposed:** any leftover paise stay with the booker.
+- Even split, no-shows left out. Amounts are worked out in paise (integers) to avoid rounding errors. Any leftover paise stay with the booker (₹100 for 3: two riders pay ₹33.33).
 - HopShare never moves money: the UPI intent opens the rider's own UPI app with the booker's UPI ID and amount. A copyable UPI ID and QR code are the fallback, since some UPI apps block these links. If the UPI app reports success, the row shows "probably paid"; the **booker's confirmation** is the truth.
 - The booker must have a UPI ID on their profile. Payments sit behind one service, so a gateway (e.g. Razorpay) could be added later without changing screens.
 

@@ -2,6 +2,7 @@ const { randomUUID } = require('node:crypto');
 const { Prisma } = require('../../generated/prisma');
 const prisma = require('../config/db');
 const { emitToUser, rideChanged } = require('../socket');
+const { isLiveRide, stageOf, liveRideWhere } = require('../rideState');
 
 const MATCH_METRES = 1000;
 const WINDOW_MINUTES = 15;
@@ -12,10 +13,10 @@ const MAX_MEMBERS = 4;
 const point = ({ longitude, latitude }) =>
   Prisma.sql`ST_SetSRID(ST_MakePoint(${longitude}::float8, ${latitude}::float8), 4326)::geography`;
 
-// one active group at a time: any group the user is in that hasn't left yet (5 min grace)
+// one active group at a time: any live group the user is in
 const activeRideOf = (userId, db = prisma) =>
   db.ride.findFirst({
-    where: { users: { some: { id: userId } }, time: { gt: new Date(Date.now() - 5 * 60_000) } },
+    where: { users: { some: { id: userId } }, ...liveRideWhere() },
     select: { id: true },
   });
 
@@ -118,7 +119,7 @@ const createRide = async (req, res) => {
   });
 };
 
-// GET /api/rides/mine — groups I'm in, newest first; "live" until 5 min after leaving time
+// GET /api/rides/mine — groups I'm in, newest first
 const myRides = async (req, res) => {
   const rides = await prisma.ride.findMany({
     where: { users: { some: { id: req.user.id } } },
@@ -128,13 +129,14 @@ const myRides = async (req, res) => {
       destinationName: true,
       time: true,
       rideCreatorId: true,
+      bookedAt: true,
+      endedAt: true,
       _count: { select: { users: true } },
     },
     orderBy: { time: 'desc' },
     take: 20,
   });
 
-  const liveAfter = Date.now() - 5 * 60_000;
   res.json({
     success: true,
     data: rides.map((r) => ({
@@ -145,7 +147,7 @@ const myRides = async (req, res) => {
       members: r._count.users,
       seatsLeft: MAX_MEMBERS - r._count.users,
       isCreator: r.rideCreatorId === req.user.id,
-      live: r.time.getTime() > liveAfter,
+      live: isLiveRide(r),
     })),
   });
 };
@@ -163,7 +165,16 @@ const getRide = async (req, res) => {
       bookedAt: true,
       cabNumber: true,
       tripLink: true,
+      pickedUpAt: true,
+      endedAt: true,
+      farePaise: true,
+      paymentStatus: true,
+      rideCreator: { select: { upiId: true } },
       users: { select: { id: true, name: true } },
+      payments: {
+        select: { id: true, fromId: true, amountPaise: true, status: true, claimedAt: true },
+        orderBy: { createdAt: 'asc' },
+      },
     },
   });
   if (!ride) return res.status(404).json({ success: false, message: 'Ride not found.' });
@@ -185,7 +196,9 @@ const getRide = async (req, res) => {
       pickup: { latitude: where.pickupLat, longitude: where.pickupLon, name: ride.sourceName },
       destination: { latitude: where.dropLat, longitude: where.dropLon, name: ride.destinationName },
       leaveAt: ride.time,
-      live: ride.time.getTime() > Date.now() - 5 * 60_000,
+      // open → booked → picked_up → ended, or past
+      stage: stageOf(ride),
+      live: isLiveRide(ride),
       isCreator: ride.rideCreatorId === req.user.id,
       members,
       seatsLeft: MAX_MEMBERS - members.length,
@@ -196,8 +209,31 @@ const getRide = async (req, res) => {
             tripLink: ride.tripLink,
           }
         : null,
+      fare: ride.endedAt ? fareView(ride, members, req.user.id) : null,
     },
   });
+};
+
+// the split once the booker has entered the fare; the booker's UPI ID is shown so the others can pay
+const fareView = (ride, members, meId) => {
+  const name = (id) => members.find((m) => m.id === id)?.firstName ?? 'Rider';
+  return {
+    farePaise: ride.farePaise,
+    // everyone who rode, booker included; leftover paise stay with the booker
+    riders: ride.payments.length + 1,
+    sharePaise: ride.payments[0]?.amountPaise ?? ride.farePaise,
+    bookerUpiId: ride.rideCreator.upiId,
+    settled: ride.paymentStatus === 'PAID',
+    payments: ride.payments.map((p) => ({
+      id: p.id,
+      userId: p.fromId,
+      firstName: name(p.fromId),
+      amountPaise: p.amountPaise,
+      status: p.status,
+      claimedAt: p.claimedAt,
+      isMe: p.fromId === meId,
+    })),
+  };
 };
 
 // optional text: trimmed, empty becomes null, too long is refused

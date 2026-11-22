@@ -67,6 +67,11 @@ model Ride {
   cabNumber       String?
   // The cab app's trip-share link, so the others can track the cab
   tripLink        String?
+  // The booker taps "Picked up" (location sharing stops), then "We've arrived" with the fare
+  pickedUpAt      DateTime?
+  endedAt         DateTime?
+  // What the booker paid, in paise
+  farePaise       Int?
 
   rideCreator  User          @relation("RideCreator", fields: [rideCreatorId], references: [id])
   users        User[]        @relation("RideUsers")
@@ -96,19 +101,27 @@ model Message {
   chat   Chat @relation(fields: [chatId], references: [id], onDelete: Cascade)
 }
 
+// One rider paying the booker back their share. HopShare never moves money:
+// the rider pays over UPI, then the booker's confirmation marks it PAID.
 model Payment {
-  id     String        @id @default(uuid())
-  fromId String
-  toId   String
-  rideId String
-  chatId String
-  status PaymentStatus @default(PENDING)
-  amount Decimal
+  id          String        @id @default(uuid())
+  fromId      String
+  toId        String
+  rideId      String
+  // no in-app chat in v1
+  chatId      String?
+  status      PaymentStatus @default(PENDING)
+  amountPaise Int
+  // the rider tapped "I've paid"; only the booker's confirmation counts
+  claimedAt   DateTime?
+  createdAt   DateTime      @default(now())
 
-  from User @relation("PaymentFrom", fields: [fromId], references: [id])
-  to   User @relation("PaymentTo", fields: [toId], references: [id])
-  ride Ride @relation(fields: [rideId], references: [id], onDelete: Cascade)
-  chat Chat @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  from User  @relation("PaymentFrom", fields: [fromId], references: [id])
+  to   User  @relation("PaymentTo", fields: [toId], references: [id])
+  ride Ride  @relation(fields: [rideId], references: [id], onDelete: Cascade)
+  chat Chat? @relation(fields: [chatId], references: [id], onDelete: Cascade)
+
+  @@unique([rideId, fromId])
 }
 
 enum JoinRequestStatus {

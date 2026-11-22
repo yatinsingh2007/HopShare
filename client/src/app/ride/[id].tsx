@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Button } from '@/components/Button';
 import { CabBooking, type Booking, type BookingInput } from '@/components/CabBooking';
+import { FareSummary, TripControls, type Fare, type Stage } from '@/components/FareSplit';
 import { Icon } from '@/components/Icon';
 import { clock, groupCode } from '@/components/RideCard';
 import { RouteMap } from '@/components/RouteMap';
@@ -16,6 +17,7 @@ import { useSession } from '@/context/AuthContext';
 import { useTheme } from '@/context/ThemeContext';
 import { ApiError } from '@/services/api';
 import type { Place } from '@/services/cabApps';
+import { rupees } from '@/services/upi';
 import { fonts, type } from '@/theme/type';
 
 type Member = { id: string; firstName: string | null; isCreator: boolean; isMe: boolean };
@@ -29,6 +31,8 @@ type Ride = {
   members: Member[];
   seatsLeft: number;
   booking: Booking | null;
+  stage: Stage;
+  fare: Fare | null;
 };
 
 type JoinRequest = {
@@ -151,7 +155,8 @@ function OpenSeat({ index }: { index: number }) {
  */
 function LiveRideMap({ ride, extra }: { ride: Ride; extra: Place | null }) {
   const { colors } = useTheme();
-  const share = ride.live && !!ride.booking;
+  // from cab booked until picked up
+  const share = ride.stage === 'booked';
   const { positions, denied } = useLiveRide(ride.id, share);
 
   const riders = useMemo(
@@ -259,6 +264,7 @@ export default function RideScreen() {
   // ride:updated reaches this phone because LiveRideMap keeps it in the ride's room
   useSocketEvent('ride:updated', changed);
   useSocketEvent('requests:updated', changed);
+  useSocketEvent('payment:due', changed);
 
   const refresh = async () => {
     setRefreshing(true);
@@ -288,6 +294,17 @@ export default function RideScreen() {
       // booking closes the group, so any pending requests are gone
       setRequests([]);
       setSelected(null);
+      return null;
+    } catch (e) {
+      return e instanceof ApiError ? e.message : 'Something went wrong. Please try again.';
+    }
+  };
+
+  // trip and payment actions: each returns an error message, or null when done
+  const act = async (path: string, body?: unknown) => {
+    try {
+      await request(`/api/rides/${id}/${path}`, { method: 'POST', body });
+      await fetchRide();
       return null;
     } catch (e) {
       return e instanceof ApiError ? e.message : 'Something went wrong. Please try again.';
@@ -333,6 +350,7 @@ export default function RideScreen() {
   }
 
   const code = groupCode(ride.id);
+  const myPayment = ride.fare?.payments.find((p) => p.isMe);
   const mins = minutesUntil(ride.leaveAt);
   const soft = 'rgba(255,255,255,0.78)';
 
@@ -363,12 +381,12 @@ export default function RideScreen() {
               entering={FadeInDown.duration(280)}
               accessible
               accessibilityRole="header"
-              accessibilityLabel={`${ride.live ? 'Live' : 'Past'} group ${code}, leaves ${day(ride.leaveAt)} at ${clock(ride.leaveAt)}`}
+              accessibilityLabel={`${ride.live ? 'Live' : ride.stage === 'ended' ? 'Finished' : 'Past'} group ${code}, leaves ${day(ride.leaveAt)} at ${clock(ride.leaveAt)}`}
               style={[styles.plate, { backgroundColor: ride.live ? colors.coach : colors.card, borderColor: colors.line, borderWidth: ride.live ? 0 : 1.5 }]}
             >
               <View style={[styles.code, { backgroundColor: ride.live ? 'rgba(0,0,0,0.22)' : colors.bg }]}>
                 <Text style={[styles.codeText, { color: ride.live ? colors.accent : colors.ink }]}>{code}</Text>
-                <Text style={[type.meta, { color: ride.live ? soft : colors.muted }]}>{ride.live ? 'LIVE' : 'PAST'}</Text>
+                <Text style={[type.meta, { color: ride.live ? soft : colors.muted }]}>{ride.live ? 'LIVE' : ride.stage === 'ended' ? 'DONE' : 'PAST'}</Text>
               </View>
               <View style={styles.flex}>
                 <Text style={[type.bodySmall, { color: ride.live ? soft : colors.muted }]}>{day(ride.leaveAt)} · leaves at</Text>
@@ -378,7 +396,21 @@ export default function RideScreen() {
               </View>
             </Animated.View>
 
-            {ride.live && requests.length ? (
+            {myPayment && myPayment.status === 'PENDING' && !myPayment.claimedAt ? (
+              <SignBand
+                icon="currency_rupee"
+                title={`Pay ${creator?.firstName ?? 'the booker'} ${rupees(myPayment.amountPaise)}`}
+                detail="Your share of the fare, over UPI"
+              />
+            ) : ride.stage === 'ended' && ride.isCreator && ride.fare && !ride.fare.settled ? (
+              <SignBand
+                icon="currency_rupee"
+                title={`${ride.fare.payments.filter((p) => p.status === 'PAID').length} of ${ride.fare.payments.length} paid you back`}
+                detail="Tap Got it as each payment comes in"
+              />
+            ) : ride.stage === 'picked_up' ? (
+              <SignBand icon="directions_car" title="On the way" detail={`To ${ride.destination.name}`} />
+            ) : ride.live && requests.length ? (
               <SignBand
                 icon="how_to_reg"
                 title={`${requests.length} ${requests.length === 1 ? 'rider wants' : 'riders want'} to join`}
@@ -457,6 +489,25 @@ export default function RideScreen() {
                   onSave={saveBooking}
                 />
               </Animated.View>
+            ) : null}
+
+            {ride.isCreator ? (
+              <TripControls
+                stage={ride.stage}
+                others={ride.members.filter((m) => !m.isMe)}
+                onPickedUp={() => act('picked-up')}
+                onFare={(fare, riderIds) => act('fare', { fare, riderIds })}
+              />
+            ) : null}
+
+            {ride.fare ? (
+              <FareSummary
+                fare={ride.fare}
+                bookerName={creator?.firstName ?? 'the booker'}
+                isBooker={ride.isCreator}
+                onClaim={(paymentId) => act(`payments/${paymentId}/claim`)}
+                onConfirm={(paymentId) => act(`payments/${paymentId}/confirm`)}
+              />
             ) : null}
           </ScrollView>
 
