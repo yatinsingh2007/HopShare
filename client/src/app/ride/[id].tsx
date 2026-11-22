@@ -1,13 +1,14 @@
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { BookCabButtons } from '@/components/BookCabButtons';
 import { Button } from '@/components/Button';
+import { CabBooking, type Booking, type BookingInput } from '@/components/CabBooking';
 import { Icon } from '@/components/Icon';
 import { clock, groupCode } from '@/components/RideCard';
 import { RouteMap } from '@/components/RouteMap';
+import { Bone, SkeletonCard } from '@/components/Skeleton';
 import { SignBand } from '@/components/SignBand';
 import { useSession } from '@/context/AuthContext';
 import { useTheme } from '@/context/ThemeContext';
@@ -25,6 +26,7 @@ type Ride = {
   isCreator: boolean;
   members: Member[];
   seatsLeft: number;
+  booking: Booking | null;
 };
 
 type JoinRequest = {
@@ -141,6 +143,36 @@ function OpenSeat({ index }: { index: number }) {
   );
 }
 
+// the ride screen's layout while it loads: map, leaving-time plate, stops, riders
+function RideSkeleton({ mapHeight }: { mapHeight: number }) {
+  const { colors } = useTheme();
+  return (
+    <View style={styles.flex} accessible accessibilityLabel="Loading the ride">
+      <View style={{ height: mapHeight }}>
+        <Bone height={mapHeight} radius={0} />
+      </View>
+      <View style={[styles.sheet, styles.body, { marginTop: -SHEET_OVERLAP, backgroundColor: colors.bg }]}>
+        <View style={[styles.handle, { backgroundColor: colors.line }]} />
+        <Bone height={92} radius={12} />
+        <SkeletonCard style={styles.skeletonStops}>
+          <Bone width="25%" height={12} />
+          <Bone width="70%" height={18} />
+          <Bone width="25%" height={12} />
+          <Bone width="60%" height={18} />
+        </SkeletonCard>
+        <SkeletonCard index={1} style={styles.skeletonStops}>
+          {[0, 1].map((i) => (
+            <View key={i} style={styles.member}>
+              <Bone width={40} height={40} radius={6} />
+              <Bone width="45%" height={16} />
+            </View>
+          ))}
+        </SkeletonCard>
+      </View>
+    </View>
+  );
+}
+
 export default function RideScreen() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
@@ -195,6 +227,20 @@ export default function RideScreen() {
     }
   };
 
+  // returns an error message, or null when saved
+  const saveBooking = async (input: BookingInput) => {
+    try {
+      const booking = await request<Booking>(`/api/rides/${id}/booked`, { method: 'POST', body: input });
+      setRide((r) => (r ? { ...r, booking } : r));
+      // booking closes the group, so any pending requests are gone
+      setRequests([]);
+      setSelected(null);
+      return null;
+    } catch (e) {
+      return e instanceof ApiError ? e.message : 'Something went wrong. Please try again.';
+    }
+  };
+
   const mapHeight = Math.round(height * 0.36);
   const creator = ride?.members.find((m) => m.isCreator);
 
@@ -215,16 +261,19 @@ export default function RideScreen() {
 
   if (!ride) {
     return (
-      <View style={[styles.flex, styles.centered, { backgroundColor: colors.bg }]}>
+      <View
+        style={[styles.flex, error ? styles.centered : null, { backgroundColor: colors.bg }]}
+        onLayout={(e) => setHeight(e.nativeEvent.layout.height)}
+      >
         {error ? (
           <Animated.View entering={FadeIn} style={styles.message}>
             <Text style={[type.title, styles.center, { color: colors.ink }]}>Couldn&apos;t open this ride</Text>
             <Text style={[type.body, styles.center, { color: colors.muted }]}>{error}</Text>
             <Button label="Try again" variant="ghost" icon="refresh" onPress={fetchRide} />
           </Animated.View>
-        ) : (
-          <ActivityIndicator color={colors.ink} />
-        )}
+        ) : height > 0 ? (
+          <RideSkeleton mapHeight={Math.round(height * 0.36)} />
+        ) : null}
         {back}
       </View>
     );
@@ -343,29 +392,22 @@ export default function RideScreen() {
                 {ride.members.map((m, i) => (
                   <MemberRow key={m.id} member={m} index={i} />
                 ))}
-                {ride.live
+                {ride.live && !ride.booking
                   ? Array.from({ length: ride.seatsLeft }, (_, i) => <OpenSeat key={i} index={ride.members.length + i} />)
                   : null}
               </View>
             </View>
 
             {ride.live ? (
-              <Animated.View entering={FadeInDown.delay(200).duration(260)} style={styles.section}>
-                <Text style={[type.title, { color: colors.ink }]}>Booking the cab</Text>
-                {ride.isCreator ? (
-                  <>
-                    <Text style={[type.body, { color: colors.muted }]}>
-                      You started this group, so you book the cab once everyone&apos;s in. Uber or Ola opens with the
-                      pickup and drop filled in, and the others pay you back their share.
-                    </Text>
-                    <BookCabButtons pickup={ride.pickup} drop={ride.destination} />
-                  </>
-                ) : (
-                  <Text style={[type.body, { color: colors.muted }]}>
-                    {creator?.firstName ?? 'The person who started the group'} books the cab. You pay them back your
-                    share after the ride.
-                  </Text>
-                )}
+              <Animated.View entering={FadeInDown.delay(200).duration(260)}>
+                <CabBooking
+                  pickup={ride.pickup}
+                  drop={ride.destination}
+                  booking={ride.booking}
+                  isBooker={ride.isCreator}
+                  bookerName={creator?.firstName ?? 'The person who started the group'}
+                  onSave={saveBooking}
+                />
               </Animated.View>
             ) : null}
           </ScrollView>
@@ -421,6 +463,7 @@ const styles = StyleSheet.create({
   initial: { width: 40, height: 40, borderRadius: 6, alignItems: 'center', justifyContent: 'center' },
   open: { borderWidth: 1.5, borderStyle: 'dashed' },
   request: { gap: 14 },
+  skeletonStops: { padding: 16, gap: 10 },
   requestHead: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
   requestActions: { flexDirection: 'row', gap: 10 },
   initialText: { fontFamily: fonts.extrabold, fontSize: 18, lineHeight: 24 },
