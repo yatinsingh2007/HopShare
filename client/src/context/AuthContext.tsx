@@ -1,5 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import messaging from '@react-native-firebase/messaging';
+import { requestPermissionAndGetToken } from '@/components/Notification';
 import { apiFetch, ApiError } from '@/services/api';
 
 type RequestOptions = { method?: string; body?: unknown };
@@ -85,11 +87,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [save],
   );
 
-  // log out first, so its "clear cookie" reply can't land after a new sign-in
+  // While signed in, the server keeps this phone's FCM token so it can push when the app is closed
+  useEffect(() => {
+    if (!isSignedIn) return;
+    const saveToken = (fcmToken: string) => request('/api/me', { method: 'PATCH', body: { fcmToken } }).catch(() => {});
+    requestPermissionAndGetToken()
+      .then((token) => token !== 'Permission denied' && saveToken(token))
+      .catch(() => {});
+    return messaging().onTokenRefresh(saveToken);
+  }, [isSignedIn, request]);
+
+  // drop the push token, then log out first, so its "clear cookie" reply can't land after a new sign-in
   const signOut = useCallback(async () => {
+    await request('/api/me', { method: 'PATCH', body: { fcmToken: null } }).catch(() => {});
     await apiFetch('/api/auth/logout', { token: null, method: 'POST' }).catch(() => {});
     await save(null);
-  }, [save]);
+  }, [save, request]);
 
   const getAccessToken = useCallback(() => accessToken.current, []);
 

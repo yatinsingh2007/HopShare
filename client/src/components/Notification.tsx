@@ -9,7 +9,7 @@ import { Bone } from '@/components/Skeleton';
 import { useTheme } from '@/context/ThemeContext';
 import { fonts, type } from '@/theme/type';
 
-async function requestPermissionAndGetToken() {
+export async function requestPermissionAndGetToken() {
   if (Platform.OS === 'android') {
     await PermissionsAndroid.request(
       PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS
