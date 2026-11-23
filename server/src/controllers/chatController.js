@@ -1,5 +1,5 @@
 const prisma = require('../config/db');
-const { emitToUser } = require('../socket');
+const { emitToUser, push } = require('../socket');
 const { stageOf } = require('../rideState');
 
 const PAGE = 50;
@@ -96,6 +96,7 @@ const sendMessage = async (req, res) => {
   // to each member's own room, so the badge updates even when the chat isn't open
   for (const { id } of ride.users) {
     emitToUser(id, 'chat:message', { rideId: ride.id, message: view(message, id) });
+    if (id !== req.user.id) push(id, message.sender.name ?? 'Your group', content.length > 120 ? `${content.slice(0, 117)}…` : content, { rideId: ride.id });
   }
   res.status(201).json({ success: true, data: view(message, req.user.id) });
 };

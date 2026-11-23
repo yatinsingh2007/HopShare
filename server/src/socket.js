@@ -1,5 +1,7 @@
 const jwt = require('jsonwebtoken');
 const { Server } = require('socket.io');
+const { initializeApp, cert } = require('firebase-admin/app');
+const { getMessaging } = require('firebase-admin/messaging');
 const prisma = require('./config/db');
 const { stageOf } = require('./rideState');
 
@@ -11,6 +13,31 @@ const positions = new Map(); // rideId -> Map(userId -> { latitude, longitude, a
 const access = new Map(); // rideId -> { members: Set<userId>, sharing, until }
 
 let io = null;
+
+// Push through Firebase Cloud Messaging, so alerts arrive even when the app is closed.
+// FIREBASE_SERVICE_ACCOUNT holds the service-account JSON; without it, pushes are skipped.
+const fcm = process.env.FIREBASE_SERVICE_ACCOUNT
+  ? getMessaging(initializeApp({ credential: cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)) }))
+  : null;
+const DEAD_TOKEN = new Set(['messaging/registration-token-not-registered', 'messaging/invalid-registration-token']);
+
+const push = async (userId, title, body, data = {}) => {
+  if (!fcm) return;
+  try {
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { fcmToken: true } });
+    if (!user?.fcmToken) return;
+    await fcm.send({
+      token: user.fcmToken,
+      notification: { title, body },
+      data,
+      // the app's "Your rides" channel, so it shows as a heads-up banner
+      android: { priority: 'high', notification: { channelId: 'rides' } },
+    });
+  } catch (e) {
+    // the app was uninstalled or the token rotated: forget it
+    if (DEAD_TOKEN.has(e?.code)) prisma.user.update({ where: { id: userId }, data: { fcmToken: null } }).catch(() => {});
+  }
+};
 
 // who is in a ride and whether they share location now; cached briefly so location updates don't hit the DB
 const rideAccess = async (rideId) => {
@@ -121,6 +148,7 @@ const rideChanged = (rideId) => {
 // emits the event and keeps a line for the user's Activity feed; a failed write never breaks the request
 const tell = (userId, event, data, { kind, text }) => {
   emitToUser(userId, event, data);
+  push(userId, 'HopShare', text, data?.rideId ? { rideId: data.rideId } : {});
   prisma.activity
     .create({ data: { userId, kind, rideId: data?.rideId ?? null, text } })
     .then(() => emitToUser(userId, 'activity:new', { kind }))
@@ -133,4 +161,4 @@ const positionOf = (rideId, userId) => {
   return p && Date.now() - p.at < POSITION_TTL ? p : null;
 };
 
-module.exports = { attachSocket, emitToUser, rideChanged, tell, positionOf };
+module.exports = { attachSocket, emitToUser, rideChanged, tell, push, positionOf };

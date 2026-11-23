@@ -18,7 +18,7 @@ const UPI_ID = /^[a-zA-Z0-9._-]{2,256}@[a-zA-Z][a-zA-Z0-9]{2,64}$/;
 
 // PATCH /api/me { firstName?, upiId? } — send upiId as "" to remove it
 const updateMe = async (req, res) => {
-  const { firstName, upiId } = req.body ?? {};
+  const { firstName, upiId, fcmToken } = req.body ?? {};
   const data = {};
 
   if (firstName !== undefined) {
@@ -35,6 +35,15 @@ const updateMe = async (req, res) => {
       return res.status(400).json({ success: false, message: 'That UPI ID doesn\'t look right. It looks like name@bank.' });
     }
     data.upiId = id || null;
+  }
+
+  // this phone's push token (null on sign-out); a phone belongs to one account, so it's taken off any other
+  if (fcmToken !== undefined) {
+    if (fcmToken !== null && (typeof fcmToken !== 'string' || !fcmToken || fcmToken.length > 4096)) {
+      return res.status(400).json({ success: false, message: 'That notification token isn\'t valid.' });
+    }
+    if (fcmToken) await prisma.user.updateMany({ where: { fcmToken, id: { not: req.user.id } }, data: { fcmToken: null } });
+    data.fcmToken = fcmToken;
   }
 
   if (!Object.keys(data).length) return res.status(400).json({ success: false, message: 'Nothing to update.' });
