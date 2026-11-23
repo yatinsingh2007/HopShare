@@ -39,6 +39,8 @@ model User {
   passwordHash String?
   // Google's id for the person (the ID token's `sub`); set when they sign in with Google
   googleId     String?    @unique
+  // this phone's Firebase Cloud Messaging token, for push when the app is closed
+  fcmToken     String?    @unique
 
   rides            Ride[]        @relation("RideUsers")
   createdRides     Ride[]        @relation("RideCreator")

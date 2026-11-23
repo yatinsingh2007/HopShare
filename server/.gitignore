@@ -2,3 +2,6 @@
 .env
 
 /generated/prisma
+
+# Firebase service-account key file
+*firebase-adminsdk*.json
