@@ -175,7 +175,8 @@ const acceptRequest = async (req, res) => {
       });
     }
     return { members: members._count.users + 1, full, requesterId: request.userId, lost, crowdedOut, to: ride.destinationName };
-  });
+    // ~12 round trips to Neon; Prisma's 5 s default is too tight when filling the last seat
+  }, { timeout: 15_000 });
 
   if (result.taken) {
     await prisma.joinRequest.update({
