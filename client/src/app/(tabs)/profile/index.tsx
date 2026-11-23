@@ -6,6 +6,7 @@ import type { AndroidSymbol } from 'expo-symbols';
 import { Button } from '@/components/Button';
 import { Icon } from '@/components/Icon';
 import { Pictogram } from '@/components/Pictogram';
+import NotificationWrapper from '@/components/Notification';
 import { Bone, SkeletonCard } from '@/components/Skeleton';
 import { TextField } from '@/components/TextField';
 import { useSession } from '@/context/AuthContext';
@@ -263,6 +264,11 @@ export default function Profile() {
       </Animated.View>
 
       <Animated.View entering={FadeInDown.delay(180).duration(280)} layout={LinearTransition.duration(220)} style={styles.section}>
+        <Text style={[type.title, { color: colors.ink }]}>Notifications</Text>
+        <NotificationWrapper />
+      </Animated.View>
+
+      <Animated.View entering={FadeInDown.delay(240).duration(280)} layout={LinearTransition.duration(220)} style={styles.section}>
         <Button label="Sign out" icon="logout" variant="ghost" onPress={confirmSignOut} loading={signingOut} />
       </Animated.View>
     </ScrollView>
