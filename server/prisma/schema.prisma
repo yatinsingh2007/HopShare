@@ -1,0 +1,227 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider        = "prisma-client-js"
+  output          = "../generated/prisma"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [postgis]
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+}
+
+model User {
+  id          String     @id @default(uuid())
+  // Clerk handles sign-in; this links the rider to their Clerk account.
+  clerkId     String     @unique
+  name        String?
+  email       String?    @unique
+  status      UserStatus @default(ACTIVE)
+  phoneNumber String?    @unique
+  upiId       String?
+  // bcrypt hash; empty for Google-only accounts
+  passwordHash String?
+  // Google's id for the person (the ID token's `sub`); set when they sign in with Google
+  googleId     String?    @unique
+  // this phone's Firebase Cloud Messaging token, for push when the app is closed
+  fcmToken     String?    @unique
+
+  rides            Ride[]        @relation("RideUsers")
+  createdRides     Ride[]        @relation("RideCreator")
+  chats            Chat[]
+  sentMessages     Message[]
+  paymentsSent     Payment[]     @relation("PaymentFrom")
+  paymentsReceived Payment[]     @relation("PaymentTo")
+  joinRequests     JoinRequest[]
+  activities       Activity[]
+  trustedContacts  TrustedContact[]
+  safetyReports    SafetyReport[]
+  tripShares       TripShare[]
+}
+
+model Ride {
+  id              String                                @id @default(uuid())
+  paymentStatus   PaymentStatus                         @default(PENDING)
+  joinable        Boolean                               @default(true)
+  // [lon, lat] via ST_MakePoint(lon, lat); written with raw SQL
+  source          Unsupported("geography(Point, 4326)")
+  time            DateTime
+  destination     Unsupported("geography(Point, 4326)")
+  // Readable place names, e.g. "Rishihood University, Sonipat"
+  sourceName      String
+  destinationName String
+  rideCreatorId   String
+  // Set when the booker taps "Cab booked"; the group then takes no new riders.
+  bookedAt        DateTime?
+  // What riders look for at the kerb, and the record if something goes wrong
+  cabNumber       String?
+  // The cab app's trip-share link, so the others can track the cab
+  tripLink        String?
+  // The booker taps "Picked up" (location sharing stops), then "We've arrived" with the fare
+  pickedUpAt      DateTime?
+  endedAt         DateTime?
+  // the person who started it called it off before pickup
+  cancelledAt     DateTime?
+  // What the booker paid, in paise
+  farePaise       Int?
+
+  rideCreator  User          @relation("RideCreator", fields: [rideCreatorId], references: [id])
+  users        User[]        @relation("RideUsers")
+  chat         Chat?
+  payments     Payment[]
+  joinRequests JoinRequest[]
+  safetyReports SafetyReport[]
+  tripShares   TripShare[]
+}
+
+// One group chat per ride, made on first use. Who may read and post comes from the ride's members,
+// so Chat.users isn't used.
+model Chat {
+  id       String    @id @default(uuid())
+  rideId   String    @unique
+  ride     Ride      @relation(fields: [rideId], references: [id], onDelete: Cascade)
+  users    User[]
+  messages Message[]
+  payments Payment[]
+}
+
+model Message {
+  id        String   @id @default(uuid())
+  senderId  String
+  chatId    String
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sender User @relation(fields: [senderId], references: [id])
+  chat   Chat @relation(fields: [chatId], references: [id], onDelete: Cascade)
+
+  @@index([chatId, createdAt])
+}
+
+// One rider paying the booker back their share. HopShare never moves money:
+// the rider pays over UPI, then the booker's confirmation marks it PAID.
+model Payment {
+  id          String        @id @default(uuid())
+  fromId      String
+  toId        String
+  rideId      String
+  // no in-app chat in v1
+  chatId      String?
+  status      PaymentStatus @default(PENDING)
+  amountPaise Int
+  // the rider tapped "I've paid"; only the booker's confirmation counts
+  claimedAt   DateTime?
+  createdAt   DateTime      @default(now())
+
+  from User  @relation("PaymentFrom", fields: [fromId], references: [id])
+  to   User  @relation("PaymentTo", fields: [toId], references: [id])
+  ride Ride  @relation(fields: [rideId], references: [id], onDelete: Cascade)
+  chat Chat? @relation(fields: [chatId], references: [id], onDelete: Cascade)
+
+  @@unique([rideId, fromId])
+}
+
+enum JoinRequestStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  CANCELLED
+}
+
+// A rider asks to join a ride; the ride creator accepts or rejects it.
+// Holds the requester's own stops, so the creator can see them on the map
+// and, once accepted, it records where that member gets on and off.
+model JoinRequest {
+  id              String                                @id @default(uuid())
+  rideId          String
+  userId          String
+  status          JoinRequestStatus                     @default(PENDING)
+  // [lon, lat] via ST_MakePoint(lon, lat); written with raw SQL
+  pickup          Unsupported("geography(Point, 4326)")
+  pickupName      String
+  destination     Unsupported("geography(Point, 4326)")
+  destinationName String
+  createdAt       DateTime                              @default(now())
+  respondedAt     DateTime?
+
+  ride Ride @relation(fields: [rideId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id])
+}
+
+// What happened, for the Activity feed behind the bell on Home.
+// Written alongside the socket event, so it survives the app being closed.
+model Activity {
+  id        String    @id @default(uuid())
+  userId    String
+  // request_new, request_accepted, request_closed, cab_booked, payment_due, payment_claimed, payment_confirmed
+  kind      String
+  rideId    String?
+  text      String
+  createdAt DateTime  @default(now())
+  readAt    DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+// People a rider's SOS text goes to. Up to 3; only the rider sees them.
+model TrustedContact {
+  id        String   @id @default(uuid())
+  userId    String
+  name      String
+  // 10-digit Indian mobile number, stored as +91XXXXXXXXXX
+  phone     String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, phone])
+}
+
+// Moderation: an SOS (later also reports and disputes). No admin UI in v1.
+model SafetyReport {
+  id        String   @id @default(uuid())
+  userId    String
+  rideId    String?
+  kind      String
+  createdAt DateTime @default(now())
+
+  user User  @relation(fields: [userId], references: [id])
+  ride Ride? @relation(fields: [rideId], references: [id], onDelete: SetNull)
+}
+
+// A public live-location link for one rider on one ride. Dies when the rider stops it,
+// when the ride ends, or at expiresAt, whichever comes first.
+model TripShare {
+  id        String    @id @default(uuid())
+  // the secret part of the public link
+  token     String    @unique
+  userId    String
+  rideId    String
+  createdAt DateTime  @default(now())
+  expiresAt DateTime
+  stoppedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ride Ride @relation(fields: [rideId], references: [id], onDelete: Cascade)
+
+  @@index([rideId])
+}

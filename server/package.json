@@ -1,16 +1,30 @@
 {
   "name": "server",
   "version": "1.0.0",
-  "main": "index.js",
+  "main": "src/index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "node --env-file=.env --watch src/index.js",
+    "start": "node --env-file-if-exists=.env src/index.js",
+    "migrate": "prisma migrate deploy",
+    "postinstall": "prisma generate",
+    "test": "node --env-file-if-exists=.env --test --test-concurrency=1"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@clerk/express": "^2.1.84",
+    "@prisma/client": "^6.19.3",
+    "bcryptjs": "^3.0.3",
+    "cookie-parser": "^1.4.7",
     "express": "^5.3.0",
-    "nodemon": "^3.1.14"
+    "firebase-admin": "^14.5.1",
+    "jsonwebtoken": "^9.0.3",
+    "prisma": "^6.19.3",
+    "socket.io": "^4.8.4"
+  },
+  "devDependencies": {
+    "supertest": "^7.3.1"
   }
 }
